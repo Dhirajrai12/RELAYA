@@ -51,6 +51,8 @@ func main() {
 	srv.Sender = delivery.NewSender(srv.DeliveryPolicy)
 	srv.Hub = realtime.NewHub(pool)
 	srv.StreamOrigins = streamOrigins(cfg)
+	srv.ContractMinSamples = cfg.ContractMinSamples
+	srv.IncidentAutoResolveAfter = cfg.IncidentAutoResolveAfter
 	go srv.Hub.Run(ctx)
 	h := httpx.Chain(srv.Routes(), httpx.Log, httpx.Recover, httpx.CORS(cfg.AllowedOrigins))
 	if err := server.Run(ctx, "api", cfg.APIAddr, h); err != nil {

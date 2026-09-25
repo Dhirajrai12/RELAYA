@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -34,6 +35,11 @@ type Server struct {
 	// Realtime: change notifications pushed over WebSocket.
 	Hub           *realtime.Hub
 	StreamOrigins []string // host patterns allowed to open the stream (same-origin is always allowed)
+
+	// Contracts: shown as learning progress (the worker enforces it).
+	ContractMinSamples int
+	// Shown in the dashboard; the worker does the auto-resolving.
+	IncidentAutoResolveAfter time.Duration
 }
 
 func (s *Server) Routes() http.Handler {
@@ -98,6 +104,15 @@ func (s *Server) Routes() http.Handler {
 	h("GET /v1/orgs/{org}/deliveries", s.listDeliveries)
 	h("GET /v1/orgs/{org}/deliveries/{delivery}", s.getDelivery)
 	h("POST /v1/orgs/{org}/deliveries/{delivery}/retry", s.retryDelivery)
+
+	h("GET /v1/orgs/{org}/contracts", s.listContracts)
+	h("GET /v1/orgs/{org}/contracts/{contract}", s.getContract)
+	h("POST /v1/orgs/{org}/contracts/{contract}/versions", s.createContractVersion)
+	h("POST /v1/orgs/{org}/contracts/{contract}/relearn", s.relearnContract)
+	h("GET /v1/orgs/{org}/incidents", s.listIncidents)
+	h("POST /v1/orgs/{org}/incidents/{incident}/resolve", s.resolveIncident)
+	h("GET /v1/orgs/{org}/incidents/{incident}/replay", s.previewReplay)
+	h("POST /v1/orgs/{org}/incidents/{incident}/replay", s.startReplay)
 
 	h("GET /v1/orgs/{org}/audit-logs", s.listAuditLogs)
 

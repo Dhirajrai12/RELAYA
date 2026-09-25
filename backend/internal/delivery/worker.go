@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"relaya/internal/db"
 	"relaya/internal/realtime"
 	"relaya/internal/vault"
 )
@@ -43,7 +44,7 @@ func (w *Worker) Run(ctx context.Context) {
 		w.PollEvery = time.Second
 	}
 	wake := make(chan struct{}, 1)
-	go w.listen(ctx, wake)
+	go db.Listen(ctx, w.Pool, NotifyChannel, wake) // deliveries go out within milliseconds
 
 	sem := make(chan struct{}, w.Concurrency)
 	var wg sync.WaitGroup
@@ -90,33 +91,6 @@ func (w *Worker) RunOnce(ctx context.Context, n int) (int, error) {
 	return len(jobs), err
 }
 
-// listen wakes the loop on NOTIFY so deliveries go out within milliseconds.
-func (w *Worker) listen(ctx context.Context, wake chan<- struct{}) {
-	for ctx.Err() == nil {
-		conn, err := w.Pool.Acquire(ctx)
-		if err != nil {
-			time.Sleep(time.Second)
-			continue
-		}
-		if _, err := conn.Exec(ctx, "LISTEN "+NotifyChannel); err == nil {
-			for {
-				if _, err := conn.Conn().WaitForNotification(ctx); err != nil {
-					break
-				}
-				select {
-				case wake <- struct{}{}:
-				default:
-				}
-			}
-		}
-		// The connection may be mid-LISTEN; don't return it to the pool.
-		conn.Hijack().Close(context.Background())
-		if ctx.Err() == nil {
-			time.Sleep(time.Second)
-		}
-	}
-}
-
 type job struct {
 	ID            string
 	OrgID         string
@@ -124,6 +98,7 @@ type job struct {
 	EventReceived time.Time
 	DestinationID string
 	Attempt       int
+	ReplayID      *string // set when this attempt belongs to an incident replay
 }
 
 func (w *Worker) claim(ctx context.Context, n int) ([]job, error) {
@@ -140,7 +115,7 @@ func (w *Worker) claim(ctx context.Context, n int) ([]job, error) {
 		SET status = 'in_flight', locked_until = now() + $2::interval,
 		    attempts = d.attempts + 1, last_attempt_at = now()
 		FROM due WHERE d.id = due.id
-		RETURNING d.id, d.org_id, d.event_id, d.event_received_at, d.destination_id, d.attempts`,
+		RETURNING d.id, d.org_id, d.event_id, d.event_received_at, d.destination_id, d.attempts, d.replay_id`,
 		n, fmt.Sprintf("%d seconds", int(leaseDuration.Seconds())))
 	if err != nil {
 		return nil, err
@@ -168,6 +143,9 @@ func (w *Worker) load(ctx context.Context, j job) (target, Request, error) {
 	}
 
 	r := Request{EventID: j.EventID, DeliveryID: j.ID, Attempt: j.Attempt, URL: t.URL, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond}
+	if j.ReplayID != nil {
+		r.ReplayID = *j.ReplayID
+	}
 	var headers []byte
 	err = w.Pool.QueryRow(ctx, `
 		SELECT type, content_type, headers, payload FROM events
@@ -224,9 +202,9 @@ func (w *Worker) record(ctx context.Context, j job, started time.Time, res Resul
 	}
 	return pgx.BeginFunc(ctx, w.Pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO delivery_attempts (delivery_id, attempt, started_at, duration_ms, status_code, error, response_body, outcome)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			j.ID, j.Attempt, started, res.Duration.Milliseconds(), code, errText, res.Body, string(outcome)); err != nil {
+			INSERT INTO delivery_attempts (delivery_id, attempt, started_at, duration_ms, status_code, error, response_body, outcome, replay_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			j.ID, j.Attempt, started, res.Duration.Milliseconds(), code, errText, res.Body, string(outcome), j.ReplayID); err != nil {
 			return err
 		}
 		var status string
@@ -252,6 +230,11 @@ func (w *Worker) record(ctx context.Context, j job, started time.Time, res Resul
 		}
 		if err != nil {
 			return err
+		}
+		if j.ReplayID != nil && outcome != Retry {
+			if err := finishReplayDelivery(ctx, tx, j, outcome); err != nil {
+				return err
+			}
 		}
 		return realtime.Notify(ctx, tx, realtime.Message{
 			Type: "delivery", OrgID: j.OrgID, EventID: j.EventID, DeliveryID: j.ID, DestinationID: j.DestinationID, Status: status,

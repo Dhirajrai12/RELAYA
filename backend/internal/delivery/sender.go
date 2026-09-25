@@ -24,6 +24,7 @@ type Request struct {
 	Timeout     time.Duration
 	EventID     string // platform event ID
 	DeliveryID  string // stable across retries; sent as Idempotency-Key
+	ReplayID    string // non-empty for incident replays; sent as Relaya-Replay
 	EventType   string
 	Attempt     int
 	Body        []byte
@@ -82,6 +83,9 @@ func (s *Sender) Send(ctx context.Context, r Request) Result {
 	req.Header.Set("Relaya-Event-Id", r.EventID)
 	req.Header.Set("Relaya-Delivery-Id", r.DeliveryID)
 	req.Header.Set("Relaya-Attempt", strconv.Itoa(r.Attempt))
+	if r.ReplayID != "" {
+		req.Header.Set("Relaya-Replay", r.ReplayID)
+	}
 	if r.EventType != "" {
 		req.Header.Set("Relaya-Event-Type", r.EventType)
 	}

@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"relaya/internal/contract"
 	"relaya/internal/delivery"
 	"relaya/internal/httpx"
 	"relaya/internal/mask"
@@ -157,11 +159,11 @@ func (h *Handler) store(ctx context.Context, ev eventRow, dedup bool) (id string
 		}
 		err := tx.QueryRow(ctx, `
 			INSERT INTO events (id, org_id, project_id, webhook_id, dedup_key, type, status, signature,
-			                    content_type, headers, payload, payload_size, source_ip, received_at)
-			VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			                    content_type, headers, payload, payload_size, source_ip, received_at, contract_status)
+			VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 			RETURNING id`,
 			nullIfEmpty(id), ev.OrgID, ev.ProjectID, ev.WebhookID, ev.DedupKey, ev.Type, ev.Status, ev.Signature,
-			ev.ContentType, ev.Headers, ev.Payload, len(ev.Payload), ev.SourceIP, ev.ReceivedAt).Scan(&id)
+			ev.ContentType, ev.Headers, ev.Payload, len(ev.Payload), ev.SourceIP, ev.ReceivedAt, contractStatus(ev, dedup)).Scan(&id)
 		if err != nil {
 			return err
 		}
@@ -171,7 +173,12 @@ func (h *Handler) store(ctx context.Context, ev eventRow, dedup bool) (id string
 			return err
 		}
 		if !dedup {
-			return nil // rejected events are evidence only; never forwarded
+			return nil // rejected events are evidence only; never forwarded or checked
+		}
+		if contractStatus(ev, dedup) == "pending" {
+			if err := enqueueContractCheck(ctx, tx, id, ev); err != nil {
+				return err
+			}
 		}
 		return enqueueDeliveries(ctx, tx, id, ev)
 	})
@@ -311,4 +318,26 @@ func Maintain(ctx context.Context, pool *pgxpool.Pool, dedupRetention, interval 
 			run()
 		}
 	}
+}
+
+// contractStatus is "pending" for accepted events that can be checked against a
+// contract (a JSON object with an event type), else "none".
+func contractStatus(ev eventRow, accepted bool) string {
+	body := bytes.TrimSpace(ev.Payload)
+	if !accepted || ev.Type == "" || len(body) == 0 || body[0] != '{' {
+		return "none"
+	}
+	return "pending"
+}
+
+// enqueueContractCheck queues the event for the contract checker (in the
+// worker), so learning and checking never slow down ingest.
+func enqueueContractCheck(ctx context.Context, tx pgx.Tx, eventID string, ev eventRow) error {
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO contract_queue (event_id, event_received_at, org_id, webhook_id, event_type)
+		VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`, eventID, ev.ReceivedAt, ev.OrgID, ev.WebhookID, ev.Type); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `SELECT pg_notify($1, '')`, contract.QueueChannel)
+	return err
 }

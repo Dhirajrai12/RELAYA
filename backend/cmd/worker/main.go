@@ -1,5 +1,5 @@
-// Command worker forwards received events to customer destinations and
-// retries failed deliveries. Run as many copies as you like; they coordinate
+// Command worker forwards received events to customer destinations, retries
+// failed deliveries, and learns/checks integration contracts. Run as many copies as you like; they coordinate
 // through Postgres row locks.
 package main
 
@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"relaya/internal/config"
+	"relaya/internal/contract"
 	"relaya/internal/db"
 	"relaya/internal/delivery"
 	"relaya/internal/server"
@@ -45,6 +46,10 @@ func main() {
 		Sender:      delivery.NewSender(policy),
 		Concurrency: cfg.WorkerConcurrency,
 	}
+	checker := &contract.Checker{Pool: pool, MinSamples: cfg.ContractMinSamples, LearnWindow: cfg.ContractLearnWindow,
+		AutoResolveAfter: cfg.IncidentAutoResolveAfter}
+	go checker.Run(ctx)
+
 	slog.Info("worker started", "concurrency", cfg.WorkerConcurrency, "allow_http", policy.AllowHTTP, "allow_private", policy.AllowPrivate)
 	w.Run(ctx)
 	slog.Info("worker stopped")

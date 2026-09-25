@@ -28,6 +28,12 @@ type Config struct {
 	DeliveryAllowHTTP    bool
 	DeliveryAllowPrivate bool
 	WorkerConcurrency    int
+
+	// Contracts: propose after this many samples, or after LearnWindow with at least 3.
+	ContractMinSamples  int
+	ContractLearnWindow time.Duration
+	// Incidents close themselves after this long without occurrences (0 disables).
+	IncidentAutoResolveAfter time.Duration
 }
 
 // Load reads configuration from the environment, after loading an env file:
@@ -59,6 +65,15 @@ func Load() (Config, error) {
 	}
 	if c.WorkerConcurrency, err = strconv.Atoi(get("WORKER_CONCURRENCY", "8")); err != nil || c.WorkerConcurrency < 1 {
 		return c, errors.New("WORKER_CONCURRENCY must be a positive integer")
+	}
+	if c.ContractMinSamples, err = strconv.Atoi(get("CONTRACT_MIN_SAMPLES", "20")); err != nil || c.ContractMinSamples < 1 {
+		return c, errors.New("CONTRACT_MIN_SAMPLES must be a positive integer")
+	}
+	if c.ContractLearnWindow, err = time.ParseDuration(get("CONTRACT_LEARN_WINDOW", "24h")); err != nil {
+		return c, fmt.Errorf("CONTRACT_LEARN_WINDOW: %w", err)
+	}
+	if c.IncidentAutoResolveAfter, err = time.ParseDuration(get("INCIDENT_AUTO_RESOLVE_AFTER", "1h")); err != nil {
+		return c, fmt.Errorf("INCIDENT_AUTO_RESOLVE_AFTER: %w", err)
 	}
 	if c.SessionTTL, err = time.ParseDuration(get("SESSION_TTL", "720h")); err != nil {
 		return c, fmt.Errorf("SESSION_TTL: %w", err)

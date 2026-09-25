@@ -140,6 +140,42 @@ Add **destinations** to a webhook; every accepted event is forwarded to each ena
 | `GET /v1/orgs/{org}/deliveries/{delivery}` (with attempts) | member |
 | `POST /v1/orgs/{org}/deliveries/{delivery}/retry` | admin |
 
+## Integration contracts
+
+Relaya learns the payload shape of each **(webhook, event type)** and checks every later event against it. The work happens in the worker (`internal/contract`), never on the ingest path.
+
+1. **Learn.** Ingest queues each accepted JSON-object event that has a type (`contract_queue`, same transaction). The checker flattens the payload into paths (`payload.payment.entity.amount`, arrays as `items[].sku`) and records types (string/integer/number/boolean/null/object/array), how often each path appears (required = in every sample) and, for strings whose values repeat, the allowed values (enum). After `CONTRACT_MIN_SAMPLES` events (default 20), or `CONTRACT_LEARN_WINDOW` (24h) with at least 3, the contract is **proposed**.
+2. **Activate.** An admin marks critical fields and activates it (`POST /contracts/{id}/versions`). Each version stores the schema, a fingerprint and the critical fields.
+3. **Check.** Each event gets `contract_status`:
+
+| Change | Result |
+|---|---|
+| Same shape | `ok` |
+| New field | `compatible` (tracked under "new fields", can be accepted) |
+| New enum value; integer becomes decimal; non-critical field missing, retyped or null | `suspicious` (warning) |
+| Critical field missing (removed or renamed), retyped or null | `breaking` + incident |
+
+A missing object is reported once at its top path (breaking if any critical field is inside). Fields inside arrays are only required when the array has elements.
+
+4. **Incidents.** One open incident per (contract, kind, path); repeats bump `event_count`. Resolve manually, or **accept changes**: a new version built from events since the last activation, which resolves the contract's open incidents. **Relearn** starts over.
+5. **Auto-resolve.** Every minute the worker closes open incidents with no occurrence for `INCIDENT_AUTO_RESOLVE_AFTER` (default 1h), **provided** a later event of that contract was checked without the same finding. A provider that merely went quiet leaves the incident open. Closed with `resolved_by = system` and an audit entry.
+6. **Replay (recover + verify).** After fixing your endpoint:
+   - `GET /incidents/{id}/replay` is the dry run: affected events, deliveries per destination, already-delivered and in-flight counts. Nothing changes.
+   - `POST /incidents/{id}/replay {"confirm": true}` (admin) re-queues those deliveries (enabled destinations; in-flight ones skipped) under a `replays` row. Only one running replay per incident.
+   - The worker sends them with the original `Idempotency-Key` plus `Relaya-Replay: <replay id>`, with normal retries.
+   - When the last one finishes, the replay completes. If none failed, the incident resolves itself: "verified by replay: N of N deliveries accepted by the destination". "Verified" means your endpoint answered 2xx for every event; Relaya doesn't read back into your system.
+
+| Method & path | Min role |
+|---|---|
+| `GET /v1/orgs/{org}/contracts?webhook_id=` | member |
+| `GET /v1/orgs/{org}/contracts/{contract}` (fields, new fields, versions, recent findings) | member |
+| `POST /v1/orgs/{org}/contracts/{contract}/versions` `{"critical_fields": [...], "source": "observed" or "active"}` | admin |
+| `POST /v1/orgs/{org}/contracts/{contract}/relearn` | admin |
+| `GET /v1/orgs/{org}/incidents?status=open|resolved` | member |
+| `POST /v1/orgs/{org}/incidents/{incident}/resolve` `{"resolution": "…"}` | admin |
+
+Events can be filtered with `?contract_status=breaking`, and the event detail includes its `violations`.
+
 ## Realtime (WebSocket)
 
 Dashboards stay live without refreshing: `GET /v1/orgs/{org}/stream` upgrades to a WebSocket.

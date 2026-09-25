@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,10 +31,12 @@ type eventSummary struct {
 	ReceivedAt  time.Time `json:"received_at"`
 	// Forwarding state across destinations: none, pending, delivered, failed.
 	Delivery string `json:"delivery"`
+	// Contract check: none, pending, learning, ok, compatible, suspicious, breaking.
+	ContractStatus string `json:"contract_status"`
 }
 
 const eventSummaryCols = `id, project_id, webhook_id, dedup_key, type, status, signature,
-	content_type, payload_size, received_at`
+	content_type, payload_size, received_at, contract_status`
 
 // listEvents is the Explorer's search: newest first, keyset-paginated.
 //
@@ -59,7 +62,7 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 			add(f+" = ?", v)
 		}
 	}
-	for _, f := range []string{"type", "status", "signature", "dedup_key"} {
+	for _, f := range []string{"type", "status", "signature", "dedup_key", "contract_status"} {
 		if v := q.Get(f); v != "" {
 			add(f+" = ?", v)
 		}
@@ -102,7 +105,7 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 	for rows.Next() {
 		var e eventSummary
 		if err := rows.Scan(&e.ID, &e.ProjectID, &e.WebhookID, &e.DedupKey, &e.Type, &e.Status, &e.Signature,
-			&e.ContentType, &e.PayloadSize, &e.ReceivedAt); err != nil {
+			&e.ContentType, &e.PayloadSize, &e.ReceivedAt, &e.ContractStatus); err != nil {
 			return err
 		}
 		out = append(out, e)
@@ -128,6 +131,8 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 type eventDetail struct {
 	eventSummary
 	Deliveries []deliveryView    `json:"deliveries"`
+	Violations []violationView   `json:"violations"`  // this event's contract findings
+	ContractID *string           `json:"contract_id"` // contract for this webhook + event type, if any
 	Headers    map[string]string `json:"headers"`
 	SourceIP   *string           `json:"source_ip"`
 	// Exactly one of these is set, depending on what the payload is.
@@ -151,7 +156,7 @@ func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) error {
 	err = s.Pool.QueryRow(r.Context(), `SELECT `+eventSummaryCols+`, headers, payload, host(source_ip)
 		FROM events WHERE id = $1 AND org_id = $2`, id, orgID).
 		Scan(&e.ID, &e.ProjectID, &e.WebhookID, &e.DedupKey, &e.Type, &e.Status, &e.Signature,
-			&e.ContentType, &e.PayloadSize, &e.ReceivedAt, &headers, &payload, &e.SourceIP)
+			&e.ContentType, &e.PayloadSize, &e.ReceivedAt, &e.ContractStatus, &headers, &payload, &e.SourceIP)
 	if err != nil {
 		return notFoundIfNoRows(err)
 	}
@@ -175,6 +180,21 @@ func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	e.Delivery = summarize(e.Deliveries)
+
+	rows, err := s.Pool.Query(r.Context(), `
+		SELECT event_id, severity, kind, path, expected, actual, created_at
+		FROM contract_violations WHERE event_id = $1 AND org_id = $2 ORDER BY id`, id, orgID)
+	if err != nil {
+		return err
+	}
+	if e.Violations, err = pgx.CollectRows(rows, pgx.RowToStructByPos[violationView]); err != nil {
+		return err
+	}
+	err = s.Pool.QueryRow(r.Context(), `SELECT id FROM contracts WHERE webhook_id = $1 AND event_type = $2`,
+		e.WebhookID, e.Type).Scan(&e.ContractID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
 	httpx.JSON(w, http.StatusOK, e)
 	return nil
 }
@@ -260,7 +280,20 @@ func (s *Server) eventStats(w http.ResponseWriter, r *http.Request) error {
 		Scan(&fwd.Succeeded, &fwd.Failed, &fwd.InFlight); err != nil {
 		return err
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"hours": hours, "totals": total, "webhooks": health, "forwarded": fwd})
+	var contracts struct {
+		OpenIncidents int `json:"open_incidents"`
+		Breaking24h   int `json:"breaking_24h"`
+		Suspicious24h int `json:"suspicious_24h"`
+	}
+	if err := s.Pool.QueryRow(ctx, `
+		SELECT (SELECT count(*) FROM incidents WHERE org_id = $1 AND status = 'open'),
+		       count(*) FILTER (WHERE severity = 'breaking'),
+		       count(*) FILTER (WHERE severity = 'suspicious')
+		FROM contract_violations WHERE org_id = $1 AND created_at > now() - interval '24 hours'`, orgID).
+		Scan(&contracts.OpenIncidents, &contracts.Breaking24h, &contracts.Suspicious24h); err != nil {
+		return err
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"hours": hours, "totals": total, "webhooks": health, "forwarded": fwd, "contracts": contracts})
 	return nil
 }
 

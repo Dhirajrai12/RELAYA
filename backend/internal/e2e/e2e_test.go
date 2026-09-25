@@ -22,6 +22,7 @@ import (
 
 	"relaya/internal/api"
 	"relaya/internal/auth"
+	"relaya/internal/contract"
 	"relaya/internal/db"
 	"relaya/internal/delivery"
 	"relaya/internal/httpx"
@@ -31,10 +32,11 @@ import (
 )
 
 type env struct {
-	t      *testing.T
-	api    *httptest.Server
-	ingest *httptest.Server
-	worker *delivery.Worker
+	t       *testing.T
+	api     *httptest.Server
+	ingest  *httptest.Server
+	worker  *delivery.Worker
+	checker *contract.Checker
 }
 
 func setup(t *testing.T) *env {
@@ -85,7 +87,8 @@ func setup(t *testing.T) *env {
 	a := httptest.NewServer(httpx.Chain(srv.Routes(), httpx.Recover))
 	t.Cleanup(a.Close)
 	w := &delivery.Worker{Pool: pool, Vault: vault.NewPGVault(pool, wrapper), Sender: delivery.NewSender(policy)}
-	return &env{t: t, api: a, ingest: ing, worker: w}
+	checker := &contract.Checker{Pool: pool, MinSamples: 3, LearnWindow: time.Hour}
+	return &env{t: t, api: a, ingest: ing, worker: w, checker: checker}
 }
 
 // call sends a JSON request and decodes the JSON response into a map.
