@@ -23,8 +23,10 @@ import (
 	"relaya/internal/api"
 	"relaya/internal/auth"
 	"relaya/internal/db"
+	"relaya/internal/delivery"
 	"relaya/internal/httpx"
 	"relaya/internal/ingest"
+	"relaya/internal/realtime"
 	"relaya/internal/vault"
 )
 
@@ -32,6 +34,7 @@ type env struct {
 	t      *testing.T
 	api    *httptest.Server
 	ingest *httptest.Server
+	worker *delivery.Worker
 }
 
 func setup(t *testing.T) *env {
@@ -71,9 +74,18 @@ func setup(t *testing.T) *env {
 		Vault:         vault.NewPGVault(pool, wrapper),
 		IngestBaseURL: ing.URL,
 	}
+	// Tests deliver to httptest servers on 127.0.0.1, so allow private + http here.
+	policy := delivery.Policy{AllowHTTP: true, AllowPrivate: true}
+	srv.DeliveryPolicy = policy
+	srv.Sender = delivery.NewSender(policy)
+	srv.Hub = realtime.NewHub(pool)
+	hubCtx, stopHub := context.WithCancel(context.Background())
+	t.Cleanup(stopHub)
+	go srv.Hub.Run(hubCtx)
 	a := httptest.NewServer(httpx.Chain(srv.Routes(), httpx.Recover))
 	t.Cleanup(a.Close)
-	return &env{t: t, api: a, ingest: ing}
+	w := &delivery.Worker{Pool: pool, Vault: vault.NewPGVault(pool, wrapper), Sender: delivery.NewSender(policy)}
+	return &env{t: t, api: a, ingest: ing, worker: w}
 }
 
 // call sends a JSON request and decodes the JSON response into a map.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 
 	"relaya/internal/auth"
+	"relaya/internal/realtime"
 )
 
 type Entry struct {
@@ -41,9 +42,13 @@ func Record(ctx context.Context, q auth.Querier, e Entry) error {
 	if err != nil {
 		return err
 	}
-	_, err = q.Exec(ctx, `
+	if _, err = q.Exec(ctx, `
 		INSERT INTO audit_logs (org_id, actor_type, actor_id, action, target_type, target_id, reason, result, metadata)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		e.OrgID, e.ActorType, e.ActorID, e.Action, e.TargetType, e.TargetID, e.Reason, e.Result, meta)
-	return err
+		e.OrgID, e.ActorType, e.ActorID, e.Action, e.TargetType, e.TargetID, e.Reason, e.Result, meta); err != nil {
+		return err
+	}
+	// Every audited change is also a realtime change: open dashboards refetch
+	// what this action touched (sent when the transaction commits).
+	return realtime.Notify(ctx, q, realtime.Message{Type: "change", OrgID: e.OrgID, Action: e.Action, TargetID: e.TargetID})
 }

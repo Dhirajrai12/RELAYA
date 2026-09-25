@@ -15,7 +15,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"relaya/internal/auth"
+	"relaya/internal/delivery"
 	"relaya/internal/httpx"
+	"relaya/internal/realtime"
 	"relaya/internal/vault"
 )
 
@@ -24,6 +26,14 @@ type Server struct {
 	Auth          *auth.Service
 	Vault         vault.Vault
 	IngestBaseURL string
+
+	// Outbound delivery: URL policy (SSRF) and the sender used for test deliveries.
+	DeliveryPolicy delivery.Policy
+	Sender         *delivery.Sender
+
+	// Realtime: change notifications pushed over WebSocket.
+	Hub           *realtime.Hub
+	StreamOrigins []string // host patterns allowed to open the stream (same-origin is always allowed)
 }
 
 func (s *Server) Routes() http.Handler {
@@ -40,6 +50,8 @@ func (s *Server) Routes() http.Handler {
 	})
 	public.Handle("POST /v1/auth/signup", httpx.HandlerFunc(s.signup))
 	public.Handle("POST /v1/auth/login", httpx.HandlerFunc(s.login))
+	// Authenticates with its first message, so it sits outside the auth middleware.
+	public.HandleFunc("GET /v1/orgs/{org}/stream", s.stream)
 
 	private := http.NewServeMux()
 	h := func(pattern string, fn httpx.HandlerFunc) { private.Handle(pattern, fn) }
@@ -75,6 +87,17 @@ func (s *Server) Routes() http.Handler {
 	h("GET /v1/orgs/{org}/events", s.listEvents)
 	h("GET /v1/orgs/{org}/events/stats", s.eventStats)
 	h("GET /v1/orgs/{org}/events/{event}", s.getEvent)
+
+	h("GET /v1/orgs/{org}/webhooks/{webhook}/destinations", s.listDestinations)
+	h("POST /v1/orgs/{org}/webhooks/{webhook}/destinations", s.createDestination)
+	h("PATCH /v1/orgs/{org}/destinations/{destination}", s.updateDestination)
+	h("DELETE /v1/orgs/{org}/destinations/{destination}", s.deleteDestination)
+	h("POST /v1/orgs/{org}/destinations/{destination}/rotate-secret", s.rotateDestinationSecret)
+	h("POST /v1/orgs/{org}/destinations/{destination}/test", s.testDestination)
+
+	h("GET /v1/orgs/{org}/deliveries", s.listDeliveries)
+	h("GET /v1/orgs/{org}/deliveries/{delivery}", s.getDelivery)
+	h("POST /v1/orgs/{org}/deliveries/{delivery}/retry", s.retryDelivery)
 
 	h("GET /v1/orgs/{org}/audit-logs", s.listAuditLogs)
 

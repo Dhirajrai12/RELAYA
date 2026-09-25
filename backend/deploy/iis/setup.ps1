@@ -40,7 +40,7 @@ if (-not (Test-Path "$env:windir\System32\inetsrv\rewrite.dll")) { throw 'IIS UR
 if (-not (Test-Path "$env:ProgramFiles\IIS\Application Request Routing\requestRouter.dll")) {
   throw 'IIS Application Request Routing (ARR) is not installed.'
 }
-foreach ($exe in 'api.exe', 'ingest.exe', 'migrate.exe') {
+foreach ($exe in 'api.exe', 'ingest.exe', 'worker.exe', 'migrate.exe') {
   if (-not (Test-Path (Join-Path $DistDir $exe))) { throw "Missing $DistDir\$exe. Build first: go build -trimpath -o dist\ ./cmd/..." }
 }
 
@@ -70,7 +70,8 @@ if (-not $allowed) {
 # ---- services ------------------------------------------------------------------
 $services = @(
   @{ Name = 'relaya-ingest'; Exe = 'ingest.exe'; Display = 'Relaya webhook ingest' },
-  @{ Name = 'relaya-api';    Exe = 'api.exe';    Display = 'Relaya API' }
+  @{ Name = 'relaya-api';    Exe = 'api.exe';    Display = 'Relaya API' },
+  @{ Name = 'relaya-worker'; Exe = 'worker.exe'; Display = 'Relaya delivery worker' }
 )
 
 Step 'Stop services for upgrade'
@@ -109,9 +110,9 @@ foreach ($s in $services) {
 Step 'Lock down permissions'
 # Services run as virtual accounts: read-only on bin, and .env readable only by them + admins.
 icacls $bin /inheritance:r /grant:r 'Administrators:(OI)(CI)F' 'SYSTEM:(OI)(CI)F' `
-  'NT SERVICE\relaya-api:(OI)(CI)RX' 'NT SERVICE\relaya-ingest:(OI)(CI)RX' | Out-Null
+  'NT SERVICE\relaya-api:(OI)(CI)RX' 'NT SERVICE\relaya-ingest:(OI)(CI)RX' 'NT SERVICE\relaya-worker:(OI)(CI)RX' | Out-Null
 icacls $envFile /inheritance:r /grant:r 'Administrators:F' 'SYSTEM:F' `
-  'NT SERVICE\relaya-api:R' 'NT SERVICE\relaya-ingest:R' | Out-Null
+  'NT SERVICE\relaya-api:R' 'NT SERVICE\relaya-ingest:R' 'NT SERVICE\relaya-worker:R' | Out-Null
 
 foreach ($s in $services) { Start-Service $s.Name }
 
@@ -128,6 +129,12 @@ if ($CertThumbprint -and -not (Get-WebBinding -Name $SiteName -Protocol https)) 
   New-WebBinding -Name $SiteName -Protocol https -Port 443 -HostHeader $HostName -SslFlags 1
   (Get-WebBinding -Name $SiteName -Protocol https).AddSslCertificate($CertThumbprint, $CertStore)
 }
+
+Step 'Compress static files on the first request'
+# IIS only compresses a file after it is requested twice within 10s by default,
+# so first visits got the full ~1 MB bundle. Our assets are cache-busted, so compress always.
+Set-WebConfigurationProperty -PSPath $apphost -Location $SiteName `
+  -Filter system.webServer/serverRuntime -Name frequentHitThreshold -Value 1
 
 Step 'Keep ingest tokens out of IIS logs'
 # Ingest URLs contain the webhook token, so IIS must not log that path.

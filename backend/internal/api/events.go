@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -27,6 +28,8 @@ type eventSummary struct {
 	ContentType string    `json:"content_type"`
 	PayloadSize int       `json:"payload_size"`
 	ReceivedAt  time.Time `json:"received_at"`
+	// Forwarding state across destinations: none, pending, delivered, failed.
+	Delivery string `json:"delivery"`
 }
 
 const eventSummaryCols = `id, project_id, webhook_id, dedup_key, type, status, signature,
@@ -115,14 +118,18 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 		c := encodeCursor(last.ReceivedAt, last.ID)
 		next = &c
 	}
+	if err := s.attachDeliverySummaries(r.Context(), out); err != nil {
+		return err
+	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"data": out, "next_cursor": next})
 	return nil
 }
 
 type eventDetail struct {
 	eventSummary
-	Headers  map[string]string `json:"headers"`
-	SourceIP *string           `json:"source_ip"`
+	Deliveries []deliveryView    `json:"deliveries"`
+	Headers    map[string]string `json:"headers"`
+	SourceIP   *string           `json:"source_ip"`
 	// Exactly one of these is set, depending on what the payload is.
 	PayloadJSON   json.RawMessage `json:"payload_json,omitempty"`
 	PayloadText   *string         `json:"payload_text,omitempty"`
@@ -164,6 +171,10 @@ func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) error {
 		b := base64.StdEncoding.EncodeToString(masked)
 		e.PayloadBase64 = &b
 	}
+	if e.Deliveries, err = s.queryDeliveries(r.Context(), "dl.event_id = $1 AND dl.org_id = $2 ORDER BY dl.created_at", id, orgID); err != nil {
+		return err
+	}
+	e.Delivery = summarize(e.Deliveries)
 	httpx.JSON(w, http.StatusOK, e)
 	return nil
 }
@@ -236,7 +247,20 @@ func (s *Server) eventStats(w http.ResponseWriter, r *http.Request) error {
 		total.Received += h.Received
 		total.Rejected += h.Rejected
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"hours": hours, "totals": total, "webhooks": health})
+	var fwd struct {
+		Succeeded int `json:"succeeded"`
+		Failed    int `json:"failed"`
+		InFlight  int `json:"in_progress"`
+	}
+	if err := s.Pool.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE status = 'succeeded' AND completed_at > now() - interval '24 hours'),
+		       count(*) FILTER (WHERE status = 'failed' AND completed_at > now() - interval '24 hours'),
+		       count(*) FILTER (WHERE status IN ('pending', 'retrying', 'in_flight'))
+		FROM deliveries WHERE org_id = $1 AND created_at > now() - interval '7 days'`, orgID).
+		Scan(&fwd.Succeeded, &fwd.Failed, &fwd.InFlight); err != nil {
+		return err
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"hours": hours, "totals": total, "webhooks": health, "forwarded": fwd})
 	return nil
 }
 
@@ -258,3 +282,52 @@ func decodeCursor(c string) (time.Time, string, error) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// attachDeliverySummaries fills eventSummary.Delivery for a page of events.
+func (s *Server) attachDeliverySummaries(ctx context.Context, events []eventSummary) error {
+	if len(events) == 0 {
+		return nil
+	}
+	ids := make([]string, len(events))
+	for i, e := range events {
+		ids[i] = e.ID
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT event_id, status FROM deliveries WHERE event_id = ANY($1::uuid[])`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	byEvent := map[string][]deliveryView{}
+	for rows.Next() {
+		var id, status string
+		if err := rows.Scan(&id, &status); err != nil {
+			return err
+		}
+		byEvent[id] = append(byEvent[id], deliveryView{Status: status})
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range events {
+		events[i].Delivery = summarize(byEvent[events[i].ID])
+	}
+	return nil
+}
+
+// summarize reduces an event's deliveries to one state: failed wins, then
+// pending (queued or retrying), then delivered; none when there are no destinations.
+func summarize(ds []deliveryView) string {
+	if len(ds) == 0 {
+		return "none"
+	}
+	state := "delivered"
+	for _, d := range ds {
+		switch d.Status {
+		case "failed":
+			return "failed"
+		case "pending", "retrying", "in_flight":
+			state = "pending"
+		}
+	}
+	return state
+}

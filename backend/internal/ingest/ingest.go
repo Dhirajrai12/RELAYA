@@ -17,9 +17,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"relaya/internal/delivery"
 	"relaya/internal/httpx"
 	"relaya/internal/mask"
 	"relaya/internal/provider"
+	"relaya/internal/realtime"
 	"relaya/internal/vault"
 )
 
@@ -153,15 +155,41 @@ func (h *Handler) store(ctx context.Context, ev eventRow, dedup bool) (id string
 				return nil
 			}
 		}
-		return tx.QueryRow(ctx, `
+		err := tx.QueryRow(ctx, `
 			INSERT INTO events (id, org_id, project_id, webhook_id, dedup_key, type, status, signature,
 			                    content_type, headers, payload, payload_size, source_ip, received_at)
 			VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 			RETURNING id`,
 			nullIfEmpty(id), ev.OrgID, ev.ProjectID, ev.WebhookID, ev.DedupKey, ev.Type, ev.Status, ev.Signature,
 			ev.ContentType, ev.Headers, ev.Payload, len(ev.Payload), ev.SourceIP, ev.ReceivedAt).Scan(&id)
+		if err != nil {
+			return err
+		}
+		if err := realtime.Notify(ctx, tx, realtime.Message{
+			Type: "event", OrgID: ev.OrgID, WebhookID: ev.WebhookID, EventID: id, Status: ev.Status,
+		}); err != nil {
+			return err
+		}
+		if !dedup {
+			return nil // rejected events are evidence only; never forwarded
+		}
+		return enqueueDeliveries(ctx, tx, id, ev)
 	})
 	return id, duplicate, err
+}
+
+// enqueueDeliveries creates one delivery job per enabled destination, in the
+// same transaction as the event, and wakes the workers once it commits.
+func enqueueDeliveries(ctx context.Context, tx pgx.Tx, eventID string, ev eventRow) error {
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO deliveries (org_id, event_id, event_received_at, webhook_id, destination_id)
+		SELECT org_id, $1, $2, webhook_id, id FROM destinations
+		WHERE webhook_id = $3 AND enabled`, eventID, ev.ReceivedAt, ev.WebhookID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return err
+	}
+	_, err = tx.Exec(ctx, `SELECT pg_notify($1, '')`, delivery.NotifyChannel)
+	return err
 }
 
 func nullIfEmpty(s string) *string {

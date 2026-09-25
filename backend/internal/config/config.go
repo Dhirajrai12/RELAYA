@@ -23,6 +23,11 @@ type Config struct {
 	SessionTTL        time.Duration
 	AllowedOrigins    []string
 	TrustProxyHeaders bool // trust X-Real-IP/X-Forwarded-For; enable only behind our own proxy
+
+	// Outbound delivery (SSRF policy + worker). Dev defaults allow http://localhost receivers.
+	DeliveryAllowHTTP    bool
+	DeliveryAllowPrivate bool
+	WorkerConcurrency    int
 }
 
 // Load reads configuration from the environment, after loading an env file:
@@ -44,9 +49,16 @@ func Load() (Config, error) {
 		TrustProxyHeaders: get("TRUST_PROXY_HEADERS", "false") == "true",
 	}
 
+	dev := c.Env == "dev"
+	c.DeliveryAllowHTTP = getBool("DELIVERY_ALLOW_HTTP", dev)
+	c.DeliveryAllowPrivate = getBool("DELIVERY_ALLOW_PRIVATE", dev)
+
 	var err error
 	if c.MaxBodyBytes, err = strconv.ParseInt(get("MAX_BODY_BYTES", "5242880"), 10, 64); err != nil {
 		return c, fmt.Errorf("MAX_BODY_BYTES: %w", err)
+	}
+	if c.WorkerConcurrency, err = strconv.Atoi(get("WORKER_CONCURRENCY", "8")); err != nil || c.WorkerConcurrency < 1 {
+		return c, errors.New("WORKER_CONCURRENCY must be a positive integer")
 	}
 	if c.SessionTTL, err = time.ParseDuration(get("SESSION_TTL", "720h")); err != nil {
 		return c, fmt.Errorf("SESSION_TTL: %w", err)
@@ -77,4 +89,14 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+func getBool(key string, def bool) bool {
+	switch strings.ToLower(os.Getenv(key)) {
+	case "true", "1", "yes":
+		return true
+	case "false", "0", "no":
+		return false
+	}
+	return def
 }

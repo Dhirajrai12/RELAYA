@@ -49,5 +49,14 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  worker:
+    build: .
+    command: ["/app/worker"]
+    env_file: .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   pgdata:

@@ -235,3 +235,14 @@ func CheckPasswordOrDummy(hash string, found bool, pw string) bool {
 	}
 	return CheckPassword(hash, pw)
 }
+
+// Authenticate validates a bearer token (session or API key) outside of the
+// HTTP middleware, e.g. for a WebSocket that authenticates with its first message.
+func (s *Service) Authenticate(ctx context.Context, token string) (Principal, error) {
+	return s.authenticate(ctx, strings.TrimSpace(token))
+}
+
+// WithPrincipal returns ctx carrying p, as the middleware would.
+func WithPrincipal(ctx context.Context, p Principal) context.Context {
+	return context.WithValue(ctx, ctxKey{}, p)
+}

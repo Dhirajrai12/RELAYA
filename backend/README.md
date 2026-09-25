@@ -120,6 +120,40 @@ Ingest outcomes:
 - Same dedup key again (per webhook, 30-day window): `200` with the original ID; nothing new stored.
 - Bad or missing signature: stored as `rejected` (evidence for the Explorer), `401`. Rejected events never claim a dedup key, so a forged request can't block the real one.
 
+## Delivery (forwarding to your endpoints)
+
+Add **destinations** to a webhook; every accepted event is forwarded to each enabled destination by `cmd/worker`.
+
+- **Queued with the event.** Ingest inserts one `deliveries` row per destination in the same transaction as the event and `NOTIFY`s the workers, so nothing is lost and delivery starts within milliseconds. Duplicates and rejected events are never forwarded.
+- **Request.** `POST` of the original body with the original `Content-Type` and provider headers (so existing provider-signature checks keep working), plus `Relaya-Event-Id`, `Relaya-Delivery-Id`, `Relaya-Attempt`, `Relaya-Event-Type`, `Idempotency-Key` (= delivery ID, stable across retries) and `Relaya-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>`.
+- **Retries.** 2xx = delivered. 429/408/5xx/timeouts/network errors retry after 30s, 2m, 10m, 30m, 1h, 3h, 6h (±20% jitter; `Retry-After` honoured) up to `max_attempts` (default 8). Other 4xx and 3xx fail immediately. "Retry now" in the dashboard or `POST /deliveries/{id}/retry` adds one more attempt.
+- **Workers.** Claim jobs with `FOR UPDATE SKIP LOCKED` and a 5-minute lease, so you can run several and a crashed worker's jobs are picked up again.
+- **SSRF protection.** Destinations must be public `https` URLs. The worker re-checks the resolved IP at connect time and refuses loopback, private, link-local (cloud metadata), CGNAT and other internal ranges, and never follows redirects. `DELIVERY_ALLOW_HTTP` / `DELIVERY_ALLOW_PRIVATE` relax this for local development only (on by default when `APP_ENV=dev`).
+
+| Method & path | Min role |
+|---|---|
+| `GET/POST /v1/orgs/{org}/webhooks/{webhook}/destinations` | member / admin |
+| `PATCH/DELETE /v1/orgs/{org}/destinations/{destination}` | admin |
+| `POST …/destinations/{destination}/test` (synchronous test delivery) | admin |
+| `POST …/destinations/{destination}/rotate-secret` | admin |
+| `GET /v1/orgs/{org}/deliveries?event_id=&destination_id=&webhook_id=&status=` | member |
+| `GET /v1/orgs/{org}/deliveries/{delivery}` (with attempts) | member |
+| `POST /v1/orgs/{org}/deliveries/{delivery}/retry` | admin |
+
+## Realtime (WebSocket)
+
+Dashboards stay live without refreshing: `GET /v1/orgs/{org}/stream` upgrades to a WebSocket.
+
+1. Client sends `{"type":"auth","token":"rs_… | rk_…"}` as its first message (within 10s). The token is never in the URL, so it can't end up in proxy or IIS logs.
+2. Server replies `{"type":"ready"}`, then pushes small messages that say *what changed*:
+   - `event`: an incoming webhook was stored (`event_id`, `webhook_id`, `status`)
+   - `delivery`: a delivery attempt finished (`event_id`, `delivery_id`, `destination_id`, `status`)
+   - `change`: anything written to the audit log (`action`, e.g. `webhook.create`, `target_id`)
+   - `resync`: messages were dropped (slow client or DB reconnect); refetch everything
+3. The dashboard refetches only the affected queries (bursts coalesced every 100 ms) and stops polling while connected. It reconnects with backoff, and polls as a fallback while offline.
+
+How it works: writers call `realtime.Notify` inside their transaction (`pg_notify`, delivered only on commit). Each API process runs a `realtime.Hub` that `LISTEN`s and fans out by organization. The server pings every 25s (keeps IIS/ARR from idling the socket out) and re-validates the session and membership every 5 minutes. Allowed origins are `CORS_ALLOWED_ORIGINS` plus the host of `INGEST_BASE_URL`.
+
 ## Design notes
 
 - **Events** are partitioned monthly (`events_YYYY_MM`); ingest creates partitions 2 months ahead every 6 hours. Dedup lives in `event_dedup` so uniqueness holds across partitions.
