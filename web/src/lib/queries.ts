@@ -15,6 +15,11 @@ import type {
   Project,
   Role,
   EventStats,
+  Contract,
+  ContractDetail,
+  Incident,
+  Replay,
+  ReplayPlan,
   Delivery,
   DeliveryAttempt,
   Destination,
@@ -213,6 +218,7 @@ export interface EventFilters {
   status?: string
   signature?: string
   dedup_key?: string
+  contract_status?: string
 }
 
 /** Explorer list: newest first, "load more" pagination. Pushed live; polls only if the stream is down. */
@@ -333,6 +339,101 @@ export function useEventStats() {
     queryKey: ['event-stats', orgId],
     queryFn: () => get<EventStats>(orgPath(orgId, '/events/stats')),
     refetchInterval: interval,
+  })
+}
+
+// ---- contracts & incidents -----------------------------------------------------------
+
+export function useContracts(webhookId?: string) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['contracts', orgId, webhookId ?? 'all'],
+    queryFn: () => get<List<Contract>>(orgPath(orgId, `/contracts${webhookId ? `?webhook_id=${webhookId}` : ''}`)),
+  })
+}
+
+export function useContract(id: string) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['contract', orgId, id],
+    queryFn: () => get<ContractDetail>(orgPath(orgId, `/contracts/${id}`)),
+  })
+}
+
+export function useCreateContractVersion(id: string) {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { critical_fields: string[]; source: 'observed' | 'active' }) =>
+      post<{ version: number }>(orgPath(orgId, `/contracts/${id}/versions`), v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contract', orgId, id] })
+      qc.invalidateQueries({ queryKey: ['contracts', orgId] })
+      qc.invalidateQueries({ queryKey: ['incidents', orgId] })
+    },
+  })
+}
+
+export function useRelearnContract(id: string) {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => post<void>(orgPath(orgId, `/contracts/${id}/relearn`)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contract', orgId, id] })
+      qc.invalidateQueries({ queryKey: ['contracts', orgId] })
+      qc.invalidateQueries({ queryKey: ['incidents', orgId] })
+    },
+  })
+}
+
+export function useIncidents(status: 'open' | 'resolved' = 'open') {
+  const orgId = useOrgId()
+  const interval = useLiveInterval(15_000)
+  return useQuery({
+    queryKey: ['incidents', orgId, status],
+    queryFn: () => get<List<Incident> & { auto_resolve_after_seconds: number }>(orgPath(orgId, `/incidents?status=${status}`)),
+    refetchInterval: interval,
+  })
+}
+
+/** Dry run: what a replay would send. Only fetched while the dialog is open. */
+export function useReplayPreview(incidentId: string | null) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['replay-preview', orgId, incidentId],
+    queryFn: () => get<ReplayPlan>(orgPath(orgId, `/incidents/${incidentId}/replay`)),
+    enabled: !!incidentId,
+    staleTime: 0,
+  })
+}
+
+export function useStartReplay() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (incidentId: string) => post<Replay>(orgPath(orgId, `/incidents/${incidentId}/replay`), { confirm: true }),
+    onSuccess: (replay, incidentId) => {
+      // Show progress immediately; realtime delivery messages keep it moving.
+      qc.setQueryData<List<Incident>>(['incidents', orgId, 'open'], (old) =>
+        old ? { ...old, data: old.data.map((i) => (i.id === incidentId ? { ...i, replay } : i)) } : old,
+      )
+      qc.invalidateQueries({ queryKey: ['incidents', orgId] })
+    },
+  })
+}
+
+export function useResolveIncident() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { id: string; resolution: string }) =>
+      post<void>(orgPath(orgId, `/incidents/${v.id}/resolve`), { resolution: v.resolution }),
+    onSuccess: (_, v) => {
+      removeFromList(qc, ['incidents', orgId, 'open'], v.id)
+      qc.invalidateQueries({ queryKey: ['incidents', orgId] })
+      qc.invalidateQueries({ queryKey: ['contracts', orgId] })
+    },
   })
 }
 

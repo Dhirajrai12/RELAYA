@@ -4,9 +4,8 @@ import {
   CheckCircle2Icon,
   CircleDashedIcon,
   CircleIcon,
-  ClockIcon,
-  ShieldAlertIcon,
   SendIcon,
+  ShieldAlertIcon,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -63,7 +62,20 @@ export function OverviewPage() {
                 : 'No failed deliveries'
           }
         />
-        <StatTile label="Last delivery" value={lastAt ? timeAgo(lastAt) : '—'} icon={ClockIcon} sub={lastAt ? new Date(lastAt).toLocaleString() : 'Waiting for the first one'} />
+        <Link to="/incidents" className="rounded-xl transition hover:ring-2 hover:ring-brand/30">
+          <StatTile
+            label="Open incidents"
+            value={s.contracts.open_incidents}
+            icon={ShieldAlertIcon}
+            sub={
+              s.contracts.breaking_24h || s.contracts.suspicious_24h
+                ? `${s.contracts.breaking_24h} breaking · ${s.contracts.suspicious_24h} warnings (24h)`
+                : lastAt
+                  ? `Last delivery ${timeAgo(lastAt)}`
+                  : 'Contracts learn from your first events'
+            }
+          />
+        </Link>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-5">

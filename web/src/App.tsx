@@ -23,6 +23,9 @@ const pages = {
   webhookDetail: () => import('@/pages/webhook-detail'),
   projects: () => import('@/pages/projects'),
   settings: () => import('@/pages/settings'),
+  contracts: () => import('@/pages/contracts'),
+  contractDetail: () => import('@/pages/contract-detail'),
+  incidents: () => import('@/pages/incidents'),
 }
 const LandingPage = lazy(() => pages.landing().then((m) => ({ default: m.LandingPage })))
 const OverviewPage = lazy(() => pages.overview().then((m) => ({ default: m.OverviewPage })))
@@ -33,6 +36,9 @@ const ProjectsPage = lazy(() => pages.projects().then((m) => ({ default: m.Proje
 const MembersPage = lazy(() => pages.settings().then((m) => ({ default: m.MembersPage })))
 const ApiKeysPage = lazy(() => pages.settings().then((m) => ({ default: m.ApiKeysPage })))
 const AuditPage = lazy(() => pages.settings().then((m) => ({ default: m.AuditPage })))
+const ContractsPage = lazy(() => pages.contracts().then((m) => ({ default: m.ContractsPage })))
+const ContractDetailPage = lazy(() => pages.contractDetail().then((m) => ({ default: m.ContractDetailPage })))
+const IncidentsPage = lazy(() => pages.incidents().then((m) => ({ default: m.IncidentsPage })))
 
 /** Once signed in and idle, fetch the other dashboard pages so navigating never waits. */
 function usePreloadDashboard() {
@@ -86,6 +92,9 @@ function SignedIn() {
         <Route path="webhooks" element={<WebhooksPage />} />
         <Route path="webhooks/:id" element={<WebhookDetailPage />} />
         <Route path="projects" element={<ProjectsPage />} />
+        <Route path="contracts" element={<ContractsPage />} />
+        <Route path="contracts/:id" element={<ContractDetailPage />} />
+        <Route path="incidents" element={<IncidentsPage />} />
         <Route path="settings/members" element={<MembersPage />} />
         <Route path="settings/api-keys" element={<AdminOnly><ApiKeysPage /></AdminOnly>} />
         <Route path="settings/audit" element={<AdminOnly><AuditPage /></AdminOnly>} />

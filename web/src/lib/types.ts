@@ -69,10 +69,13 @@ export interface EventSummary {
   received_at: string
   /** Forwarding state across destinations. */
   delivery: EventDeliveryState
+  contract_status: EventContractStatus
 }
 
 export interface EventDetail extends EventSummary {
   deliveries: Delivery[]
+  violations: Violation[]
+  contract_id: string | null
   headers: Record<string, string>
   source_ip: string | null
   payload_json?: unknown
@@ -129,6 +132,7 @@ export interface EventStats {
   totals: { received: number; rejected: number }
   webhooks: WebhookHealth[]
   forwarded: { succeeded: number; failed: number; in_progress: number }
+  contracts: { open_incidents: number; breaking_24h: number; suspicious_24h: number }
 }
 
 export type EventDeliveryState = 'none' | 'pending' | 'delivered' | 'failed'
@@ -187,4 +191,113 @@ export interface TestDeliveryResult {
   duration_ms: number
   response_body: string
   error: string
+}
+
+export type EventContractStatus = 'none' | 'pending' | 'learning' | 'ok' | 'compatible' | 'suspicious' | 'breaking'
+export type ContractState = 'learning' | 'proposed' | 'active'
+
+export interface Contract {
+  id: string
+  webhook_id: string
+  webhook_name: string
+  event_type: string
+  status: ContractState
+  samples: number
+  min_samples: number
+  active_version: number | null
+  fingerprint: string
+  field_count: number
+  critical_count: number
+  new_fields: number
+  suspicious_24h: number
+  breaking_24h: number
+  open_incidents: number
+  first_seen_at: string
+  last_seen_at: string
+}
+
+export interface ContractField {
+  path: string
+  types: string[] | null
+  required: boolean
+  enum?: string[]
+  critical: boolean
+  in_version: boolean
+  observed_types: string[] | null
+  observed_seen: number
+}
+
+export interface ContractVersion {
+  version: number
+  fingerprint: string
+  critical_count: number
+  created_by: string
+  created_at: string
+}
+
+export interface Violation {
+  event_id: string
+  severity: 'suspicious' | 'breaking'
+  kind: string
+  path: string
+  expected: string
+  actual: string
+  created_at: string
+}
+
+export interface ContractDetail {
+  contract: Contract
+  fields: ContractField[]
+  observed_samples: number
+  new_fields: Record<string, { count: number; first_seen: string; types: string }>
+  versions: ContractVersion[]
+  violations: Violation[]
+}
+
+export interface Incident {
+  id: string
+  webhook_id: string
+  webhook_name: string
+  contract_id: string
+  event_type: string
+  kind: string
+  path: string
+  severity: string
+  status: 'open' | 'resolved'
+  title: string
+  expected: string
+  actual: string
+  event_count: number
+  first_seen_at: string
+  last_seen_at: string
+  sample_event_id: string | null
+  resolved_at: string | null
+  resolution: string
+  resolved_by: string
+  replay: Replay | null
+}
+
+export interface Replay {
+  id: string
+  status: 'running' | 'completed'
+  total: number
+  succeeded: number
+  failed: number
+  created_by: string
+  created_at: string
+  completed_at: string | null
+}
+
+export interface ReplayPlan {
+  events: number
+  will_send: number
+  destinations: {
+    destination_id: string
+    destination_name: string
+    destination_url: string
+    enabled: boolean
+    deliveries: number
+    already_succeeded: number
+    in_flight: number
+  }[]
 }

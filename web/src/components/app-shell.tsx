@@ -8,6 +8,8 @@ import {
   ScrollTextIcon,
   UsersIcon,
   WebhookIcon,
+  ShieldAlertIcon,
+  FileCheck2Icon,
 } from 'lucide-react'
 import { Suspense, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
@@ -21,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { post } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useIncidents } from '@/lib/queries'
 import { useRealtime } from '@/lib/realtime'
 import { cn } from '@/lib/utils'
 import type { Org } from '@/lib/types'
@@ -28,7 +31,9 @@ import type { Org } from '@/lib/types'
 const nav = [
   { to: '/overview', label: 'Overview', icon: LayoutDashboardIcon },
   { to: '/events', label: 'Events', icon: ActivityIcon },
+  { to: '/incidents', label: 'Incidents', icon: ShieldAlertIcon, badge: 'incidents' as const },
   { to: '/webhooks', label: 'Webhooks', icon: WebhookIcon },
+  { to: '/contracts', label: 'Contracts', icon: FileCheck2Icon },
   { to: '/projects', label: 'Projects', icon: FolderIcon },
 ]
 
@@ -38,7 +43,21 @@ const settingsNav = [
   { to: '/settings/audit', label: 'Audit log', icon: ScrollTextIcon, minRole: 'admin' },
 ]
 
-function NavItem({ to, label, icon: Icon, onNavigate }: { to: string; label: string; icon: typeof ActivityIcon; onNavigate?: () => void }) {
+function NavItem({
+  to,
+  label,
+  icon: Icon,
+  onNavigate,
+  badge,
+}: {
+  to: string
+  label: string
+  icon: typeof ActivityIcon
+  onNavigate?: () => void
+  badge?: 'incidents'
+}) {
+  const incidents = useIncidents('open')
+  const count = badge === 'incidents' ? (incidents.data?.data.length ?? 0) : 0
   return (
     <NavLink
       to={to}
@@ -53,6 +72,11 @@ function NavItem({ to, label, icon: Icon, onNavigate }: { to: string; label: str
     >
       <Icon className="size-4" />
       {label}
+      {count > 0 && (
+        <span className="ml-auto rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white" aria-label={`${count} open`}>
+          {count}
+        </span>
+      )}
     </NavLink>
   )
 }
@@ -75,7 +99,8 @@ function SidebarContent({ orgs, onNavigate }: { orgs: Org[]; onNavigate?: () => 
       <Logo className="px-2 pb-2 pt-1" />
       <LiveIndicator className="mb-4 px-2" />
 
-      {orgs.length > 1 ? (
+      {/* Organization switcher: only when the user belongs to more than one. */}
+      {orgs.length > 1 && (
         <SimpleSelect
           className="mb-4 w-full"
           value={orgId ?? ''}
@@ -85,8 +110,6 @@ function SidebarContent({ orgs, onNavigate }: { orgs: Org[]; onNavigate?: () => 
           }}
           options={orgs.map((o) => ({ value: o.id, label: o.name }))}
         />
-      ) : (
-        <div className="mb-4 truncate rounded-md border bg-background px-3 py-2 text-sm font-medium">{org?.name}</div>
       )}
 
       <nav className="flex flex-col gap-0.5">

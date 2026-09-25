@@ -13,8 +13,9 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { errorMessage } from '@/lib/api'
 import { providerLabel, timeAgo } from '@/lib/format'
+import { ContractStateBadge } from '@/components/contract'
 import { DestinationsCard } from '@/components/destinations-card'
-import { useDeleteWebhook, useEvents, useRotateWebhookURL, useUpdateWebhook, useWebhook } from '@/lib/queries'
+import { useContracts, useDeleteWebhook, useEvents, useRotateWebhookURL, useUpdateWebhook, useWebhook } from '@/lib/queries'
 import { useCanManage } from '@/lib/role'
 import type { Webhook } from '@/lib/types'
 
@@ -100,6 +101,8 @@ function WebhookView({ w }: { w: Webhook }) {
         </Card>
 
         <DestinationsCard webhookId={w.id} />
+
+        <WebhookContracts webhookId={w.id} />
 
         <RecentEvents webhookId={w.id} />
 
@@ -255,5 +258,44 @@ function SecretForm({ w }: { w: Webhook }) {
         </div>
       )}
     </form>
+  )
+}
+
+/** The contracts learned for this webhook, one per event type. */
+function WebhookContracts({ webhookId }: { webhookId: string }) {
+  const { data, isPending } = useContracts(webhookId)
+  const contracts = data?.data ?? []
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader>
+        <CardTitle>Contracts</CardTitle>
+        <CardDescription>
+          One per event type, learned automatically. Critical fields that go missing or change type open an incident.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <Skeleton className="h-16 w-full" />
+        ) : contracts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No contracts yet. They appear when JSON events with a type arrive.</p>
+        ) : (
+          <ul className="divide-y rounded-lg border">
+            {contracts.map((c) => (
+              <li key={c.id}>
+                <Link to={`/contracts/${c.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 hover:bg-muted/50">
+                  <span className="min-w-0 flex-1 truncate font-mono text-sm">{c.event_type}</span>
+                  {c.open_incidents > 0 && (
+                    <span className="text-xs font-medium text-red-700 dark:text-red-400">
+                      {c.open_incidents} open incident{c.open_incidents > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  <ContractStateBadge state={c.status} version={c.active_version} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   )
 }

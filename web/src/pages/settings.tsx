@@ -252,7 +252,7 @@ export function ApiKeysPage() {
               </DialogFooter>
             </>
           ) : (
-            <form onSubmit={onCreate} className="grid gap-4">
+            <form onSubmit={onCreate} className="grid grid-cols-1 gap-4">
               <DialogHeader>
                 <DialogTitle>New API key</DialogTitle>
               </DialogHeader>

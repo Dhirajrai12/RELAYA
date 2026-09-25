@@ -21,10 +21,11 @@ export function useLiveInterval(ms: number): number | false {
 }
 
 interface Message {
-  type: 'ready' | 'resync' | 'event' | 'delivery' | 'change'
+  type: 'ready' | 'resync' | 'event' | 'delivery' | 'change' | 'contract'
   event_id?: string
   delivery_id?: string
   action?: string
+  target_id?: string
 }
 
 /** Which cached queries a message makes stale. */
@@ -37,8 +38,19 @@ function keysFor(orgId: string, m: Message): QueryKey[] {
         ['events', orgId],
         ['event-stats', orgId],
         ['destinations', orgId],
+        ['incidents', orgId], // replay progress
         ...(m.event_id ? [['event', orgId, m.event_id]] : []),
         ...(m.delivery_id ? [['delivery', orgId, m.delivery_id]] : []),
+      ]
+    case 'contract':
+      // An event was checked: its status, the contract's counts and maybe an incident changed.
+      return [
+        ['events', orgId],
+        ['contracts', orgId],
+        ['incidents', orgId],
+        ['event-stats', orgId],
+        ...(m.event_id ? [['event', orgId, m.event_id]] : []),
+        ...(m.target_id ? [['contract', orgId, m.target_id]] : []),
       ]
     case 'change': {
       const keys: QueryKey[] = [['audit', orgId]]
@@ -51,6 +63,9 @@ function keysFor(orgId: string, m: Message): QueryKey[] {
         api_key: [['api-keys', orgId]],
         org: [['me']],
         delivery: [['event', orgId], ['delivery', orgId], ['events', orgId]],
+        contract: [['contracts', orgId], ['contract', orgId], ['incidents', orgId], ['event-stats', orgId]],
+        incident: [['incidents', orgId], ['contracts', orgId], ['contract', orgId], ['event-stats', orgId]],
+        replay: [['incidents', orgId], ['event-stats', orgId], ['events', orgId]],
       }
       return keys.concat(map[area] ?? [])
     }

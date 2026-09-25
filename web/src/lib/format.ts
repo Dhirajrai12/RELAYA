@@ -31,3 +31,15 @@ export const providerLabel = (p: string) =>
 export function compact(n: number): string {
   return Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 }
+
+/** Human label for a contract finding kind. */
+const kindLabels: Record<string, string> = {
+  missing_field: 'Field missing',
+  type_changed: 'Type changed',
+  type_widened: 'Integer became decimal',
+  null_value: 'Null value',
+  new_enum_value: 'New value',
+  new_field: 'New field',
+}
+
+export const kindLabel = (k: string) => kindLabels[k] ?? k

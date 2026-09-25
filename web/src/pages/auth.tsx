@@ -64,7 +64,7 @@ export function LoginPage() {
   }))
   return (
     <AuthLayout title="Sign in" description="Watch, debug and recover your integrations.">
-      <form onSubmit={onSubmit} className="grid gap-4">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4">
         <Field id="email" label="Email" type="email" autoComplete="email" required autoFocus />
         <Field id="password" label="Password" type="password" autoComplete="current-password" required />
         {error && <p className="text-sm text-destructive">{error}</p>}
@@ -91,7 +91,7 @@ export function SignupPage() {
   }))
   return (
     <AuthLayout title="Create your account" description="You'll be the owner of a new organization.">
-      <form onSubmit={onSubmit} className="grid gap-4">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4">
         <Field id="name" label="Your name" autoComplete="name" autoFocus />
         <Field id="email" label="Work email" type="email" autoComplete="email" required />
         <Field id="password" label="Password (10+ characters)" type="password" autoComplete="new-password" minLength={10} maxLength={72} required />

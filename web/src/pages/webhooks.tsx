@@ -168,7 +168,7 @@ function CreateWebhookDialog({ open, onOpenChange }: { open: boolean; onOpenChan
             </Link>
           </p>
         ) : (
-          <form onSubmit={onSubmit} className="grid gap-4">
+          <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4">
             <div className="grid gap-2">
               <Label htmlFor="name">Name</Label>
               <Input id="name" name="name" placeholder="Razorpay production" required autoFocus />

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { CopyButton, EmptyState, ErrorState, PageHeader, SignatureLabel, StatusBadge } from '@/components/common'
+import { EventContractStatusLabel, FindingDiff, SeverityBadge } from '@/components/contract'
 import { EventDeliveries, EventDeliveryState } from '@/components/delivery'
 import { LiveIndicator } from '@/components/live-indicator'
 import { SimpleSelect } from '@/components/simple-select'
@@ -11,13 +12,13 @@ import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { bytes, dateTime, timeAgo } from '@/lib/format'
+import { bytes, dateTime, timeAgo, kindLabel } from '@/lib/format'
 import { useEvent, useEvents, useWebhooks, type EventFilters } from '@/lib/queries'
 import type { EventDetail, EventSummary } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 
-const FILTER_KEYS = ['webhook_id', 'status', 'signature', 'type', 'dedup_key'] as const
+const FILTER_KEYS = ['webhook_id', 'status', 'signature', 'type', 'dedup_key', 'contract_status'] as const
 
 export function EventsPage() {
   const [params, setParams] = useSearchParams()
@@ -85,6 +86,19 @@ export function EventsPage() {
             { value: 'invalid', label: 'Invalid' },
             { value: 'missing', label: 'Missing' },
             { value: 'not_configured', label: 'Not verified' },
+          ]}
+        />
+        <SimpleSelect
+          className="w-full sm:w-44"
+          value={filters.contract_status ?? ''}
+          onChange={(v) => setFilter('contract_status', v)}
+          options={[
+            { value: '', label: 'Any contract result' },
+            { value: 'breaking', label: 'Breaking' },
+            { value: 'suspicious', label: 'Warning' },
+            { value: 'compatible', label: 'New fields' },
+            { value: 'ok', label: 'Matches' },
+            { value: 'learning', label: 'Learning' },
           ]}
         />
         <Input
@@ -156,6 +170,7 @@ export function EventsPage() {
                   <TableHead>Webhook</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Signature</TableHead>
+                  <TableHead>Contract</TableHead>
                   <TableHead>Forwarded</TableHead>
                   <TableHead className="hidden xl:table-cell">Event ID</TableHead>
                   <TableHead className="text-right">Size</TableHead>
@@ -177,6 +192,9 @@ export function EventsPage() {
                     </TableCell>
                     <TableCell>
                       <SignatureLabel value={e.signature} />
+                    </TableCell>
+                    <TableCell>
+                      <EventContractStatusLabel status={e.contract_status} />
                     </TableCell>
                     <TableCell>
                       <EventDeliveryState state={e.delivery} />
@@ -219,9 +237,10 @@ function EventCard({ e, webhookName, onOpen }: { e: EventSummary; webhookName: (
           <SignatureLabel value={e.signature} />
           <span className="min-w-0 truncate text-muted-foreground">· {webhookName(e.webhook_id)}</span>
         </div>
-        {e.delivery !== 'none' && (
-          <div className="mt-1">
-            <EventDeliveryState state={e.delivery} />
+        {(e.delivery !== 'none' || e.contract_status !== 'none') && (
+          <div className="mt-1 flex flex-wrap gap-3">
+            {e.contract_status !== 'none' && <EventContractStatusLabel status={e.contract_status} />}
+            {e.delivery !== 'none' && <EventDeliveryState state={e.delivery} />}
           </div>
         )}
       </button>
@@ -281,6 +300,35 @@ function EventBody({ e }: { e: EventDetail }) {
           {bytes(e.payload_size)} · {e.content_type || 'no content type'}
         </dd>
       </dl>
+
+      <section>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium">Contract</h3>
+          {e.contract_id && (
+            <Link to={`/contracts/${e.contract_id}`} className="text-xs text-muted-foreground underline-offset-4 hover:underline">
+              View contract
+            </Link>
+          )}
+        </div>
+        <div className="mb-2">
+          <EventContractStatusLabel status={e.contract_status} />
+          {e.contract_status === 'none' && (
+            <span className="ml-2 text-xs text-muted-foreground">Not checked (no event type, not JSON, or rejected).</span>
+          )}
+        </div>
+        {e.violations.length > 0 && (
+          <ul className="divide-y rounded-lg border">
+            {e.violations.map((v, i) => (
+              <li key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                <SeverityBadge severity={v.severity} />
+                <span>{kindLabel(v.kind)}</span>
+                <span className="break-all font-mono text-xs">{v.path}</span>
+                <FindingDiff expected={v.expected} actual={v.actual} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section>
         <h3 className="mb-2 text-sm font-medium">Forwarding</h3>

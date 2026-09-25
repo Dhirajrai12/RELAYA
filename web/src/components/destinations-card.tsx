@@ -208,7 +208,7 @@ function AddDestinationDialog({
           <DialogTitle>Add a destination</DialogTitle>
           <DialogDescription>Events are forwarded here as they arrive. Failed deliveries are retried for up to about 11 hours.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={onSubmit} className="grid gap-4">
+        <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4">
           <div className="grid gap-2">
             <Label htmlFor="d-name">Name</Label>
             <Input id="d-name" name="name" placeholder="Order service (production)" required autoFocus />
