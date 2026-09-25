@@ -125,6 +125,13 @@ func (s *Server) Routes() http.Handler {
 	h("POST /v1/orgs/{org}/alert-channels/{channel}/test", s.testAlertChannel)
 	h("GET /v1/orgs/{org}/alerts", s.listAlerts)
 
+	h("GET /v1/orgs/{org}/repair-rules", s.listRepairRules)
+	h("POST /v1/orgs/{org}/repair-rules", s.createRepairRule)
+	h("POST /v1/orgs/{org}/repair-rules/preview", s.previewRepairRule)
+	h("PATCH /v1/orgs/{org}/repair-rules/{rule}", s.updateRepairRule)
+	h("DELETE /v1/orgs/{org}/repair-rules/{rule}", s.deleteRepairRule)
+	h("GET /v1/orgs/{org}/incidents/{incident}/repair-suggestion", s.repairSuggestion)
+
 	h("GET /v1/orgs/{org}/audit-logs", s.listAuditLogs)
 
 	public.Handle("/", s.Auth.Middleware(private))

@@ -14,12 +14,13 @@ import (
 )
 
 // affectedEvents selects the events an incident covers: those with a finding of
-// the same kind and path since the incident was first seen. Params: $1 incident id.
+// the same kind and path since the incident was first seen. Events a repair
+// rule already fixed before forwarding are left out. Params: $1 incident id.
 const affectedEvents = `
 	SELECT DISTINCT v.event_id, v.event_received_at
 	FROM incidents i
 	JOIN contract_violations v ON v.contract_id = i.contract_id AND v.kind = i.kind AND v.path = i.path
-	WHERE i.id = $1 AND v.created_at >= i.first_seen_at - interval '1 second'`
+	WHERE i.id = $1 AND NOT v.repaired AND v.created_at >= i.first_seen_at - interval '1 second'`
 
 type replayPlanRow struct {
 	DestinationID    string `json:"destination_id"`

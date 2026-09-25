@@ -15,6 +15,7 @@ import (
 	"relaya/internal/alerts"
 	"relaya/internal/db"
 	"relaya/internal/realtime"
+	"relaya/internal/repair"
 )
 
 // QueueChannel is notified by ingest when events are queued for checking.
@@ -196,7 +197,27 @@ func (c *Checker) check(ctx context.Context, tx pgx.Tx, q queued, payload []byte
 		}
 		findings, sev := Check(v.schema, v.critical, o)
 		eventStatus = sev.String()
+		// Findings a repair rule fixes are kept for visibility but open no incident.
+		var fixed map[string]bool
+		if sev >= Suspicious {
+			var repairedSev Severity
+			if fixed, repairedSev, err = c.repairedFindings(ctx, tx, q, payload, v, findings); err != nil {
+				return "", "", err
+			}
+			if len(fixed) > 0 {
+				eventStatus = StatusRepaired
+				if repairedSev >= Suspicious {
+					eventStatus = repairedSev.String()
+				}
+			}
+		}
 		for _, f := range findings {
+			if fixed[f.Kind+"|"+f.Path] {
+				if err := c.recordRepaired(ctx, tx, q, id, *activeVersion, f); err != nil {
+					return "", "", err
+				}
+				continue
+			}
 			switch f.Severity {
 			case Compatible:
 				nf := newFields[f.Path]
@@ -261,6 +282,52 @@ func (c *Checker) recordFinding(ctx context.Context, tx pgx.Tx, q queued, contra
 		return err
 	}
 	return alerts.Enqueue(ctx, tx, orgID, a)
+}
+
+// StatusRepaired marks an event that broke its contract but that the webhook's
+// repair rules turn back into a valid payload before it is forwarded.
+const StatusRepaired = "repaired"
+
+// repairedFindings applies the webhook's repair rules to the payload and
+// checks the result. It returns the (kind|path) keys of suspicious and
+// breaking findings that the repair fixes, and the repaired payload's severity.
+func (c *Checker) repairedFindings(ctx context.Context, tx pgx.Tx, q queued, payload []byte, v *version, raw []Finding) (map[string]bool, Severity, error) {
+	rules, err := repair.Load(ctx, tx, q.WebhookID, q.EventType)
+	if err != nil || len(rules) == 0 {
+		return nil, OK, err
+	}
+	res, err := repair.Apply(payload, q.EventType, rules)
+	if err != nil || !res.Changed {
+		return nil, OK, err
+	}
+	o, ok := Observe(res.Body)
+	if !ok {
+		return nil, OK, nil
+	}
+	after, sev := Check(v.schema, v.critical, o)
+	remaining := map[string]bool{}
+	for _, f := range after {
+		if f.Severity >= Suspicious {
+			remaining[f.Kind+"|"+f.Path] = true
+		}
+	}
+	fixed := map[string]bool{}
+	for _, f := range raw {
+		if key := f.Kind + "|" + f.Path; f.Severity >= Suspicious && !remaining[key] {
+			fixed[key] = true
+		}
+	}
+	return fixed, sev, nil
+}
+
+// recordRepaired records a finding that a repair rule fixed. It opens no
+// incident: the endpoint gets a valid payload.
+func (c *Checker) recordRepaired(ctx context.Context, tx pgx.Tx, q queued, contractID string, ver int, f Finding) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO contract_violations (org_id, contract_id, version, event_id, event_received_at, severity, kind, path, expected, actual, repaired)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)`,
+		q.OrgID, contractID, ver, q.EventID, q.ReceivedAt, f.Severity.String(), f.Kind, f.Path, f.Expected, f.Actual)
+	return err
 }
 
 // Title is the one-line incident summary shown in alerts and the dashboard.

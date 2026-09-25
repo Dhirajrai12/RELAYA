@@ -177,6 +177,33 @@ A missing object is reported once at its top path (breaking if any critical fiel
 
 Events can be filtered with `?contract_status=breaking`, and the event detail includes its `violations`.
 
+## Repair rules
+
+When a provider breaks its contract, a repair rule edits the payload before it's forwarded, so your endpoint keeps working while the provider fixes their side. The stored event is never changed.
+
+- **Rules** belong to a webhook and optionally one event type, and run in order. Each is a list of changes (paths use the contract notation, `items[].price`):
+
+  | Change | Example |
+  |---|---|
+  | `convert` to `string`, `number`, `integer` or `boolean` | `"100"` → `100`. Never loses data: `"12.5"` is left alone for an integer. |
+  | `rename` from → to | `amount_paise` → `amount`. Never overwrites a real value. |
+  | `default` | Fill `currency` with `"INR"` when missing or null. |
+  | `set`, `remove` | Always set or remove a field. |
+  | `map` | `"SUCCESS"` → `"captured"`. |
+
+- **At send time.** The worker applies the current rules on every attempt, so retries and replays get them too. Payloads that aren't JSON objects, or that no rule changes, are sent byte for byte. A repaired request carries `Relaya-Repaired: <rule ids>`, is signed by `Relaya-Signature` over the repaired body, and drops the provider's own signature/digest headers (they'd no longer match). Key order and number formatting are kept.
+- **Contracts.** An event that breaks the contract but passes once repaired gets `contract_status = repaired`: the finding is recorded (`repaired: true`) for visibility, but opens no incident. Contract stats count these as `repaired_24h`, not breaking.
+- **From an incident.** `GET /incidents/{id}/repair-suggestion` proposes a rule: convert a retyped field back, rename a field the provider renamed (a new field of the same type in the same object), or fill a missing/null field with a value you choose. Save it with `incident_id`, then replay the incident: the old events go out repaired and the incident resolves itself. Replays leave out events that were already sent repaired.
+- **Preview.** `POST /repair-rules/preview` dry-runs a draft (after the webhook's other rules) on a stored event and returns the masked before/after payloads, how many values each change touched, and the contract check before and after. Nothing is saved.
+
+| Method & path | Min role |
+|---|---|
+| `GET /v1/orgs/{org}/repair-rules?webhook_id=` | member |
+| `POST /v1/orgs/{org}/repair-rules` `{"webhook_id", "event_type", "name", "ops", "incident_id"?}` | admin |
+| `PATCH …/repair-rules/{rule}` `{"name", "event_type", "ops", "enabled"}`, `DELETE …` | admin |
+| `POST /v1/orgs/{org}/repair-rules/preview` `{"webhook_id", "event_type", "ops", "event_id"?, "rule_id"?}` | member |
+| `GET /v1/orgs/{org}/incidents/{incident}/repair-suggestion` | member |
+
 ## Alerts
 
 Channels (Settings → Alerts) get a message when something needs a human. Each channel picks which kinds it wants:

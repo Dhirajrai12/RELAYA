@@ -32,6 +32,7 @@ type contractView struct {
 	NewFields     int       `json:"new_fields"`
 	Suspicious24h int       `json:"suspicious_24h"`
 	Breaking24h   int       `json:"breaking_24h"`
+	Repaired24h   int       `json:"repaired_24h"` // violations a repair rule fixed
 	OpenIncidents int       `json:"open_incidents"`
 	FirstSeenAt   time.Time `json:"first_seen_at"`
 	LastSeenAt    time.Time `json:"last_seen_at"`
@@ -43,8 +44,9 @@ const contractSelect = `
 	       coalesce((SELECT count(*) FROM jsonb_object_keys(coalesce(v.schema, c.observed)->'fields')), 0),
 	       coalesce(cardinality(v.critical_fields), 0),
 	       (SELECT count(*) FROM jsonb_object_keys(c.new_fields)),
-	       (SELECT count(*) FROM contract_violations x WHERE x.contract_id = c.id AND x.severity = 'suspicious' AND x.created_at > now() - interval '24 hours'),
-	       (SELECT count(*) FROM contract_violations x WHERE x.contract_id = c.id AND x.severity = 'breaking' AND x.created_at > now() - interval '24 hours'),
+	       (SELECT count(*) FROM contract_violations x WHERE x.contract_id = c.id AND x.severity = 'suspicious' AND NOT x.repaired AND x.created_at > now() - interval '24 hours'),
+	       (SELECT count(*) FROM contract_violations x WHERE x.contract_id = c.id AND x.severity = 'breaking' AND NOT x.repaired AND x.created_at > now() - interval '24 hours'),
+	       (SELECT count(*) FROM contract_violations x WHERE x.contract_id = c.id AND x.repaired AND x.created_at > now() - interval '24 hours'),
 	       (SELECT count(*) FROM incidents i WHERE i.contract_id = c.id AND i.status = 'open'),
 	       c.first_seen_at, c.last_seen_at
 	FROM contracts c
@@ -54,7 +56,7 @@ const contractSelect = `
 func (s *Server) scanContract(row pgx.Row) (contractView, error) {
 	var v contractView
 	err := row.Scan(&v.ID, &v.WebhookID, &v.WebhookName, &v.EventType, &v.Status, &v.Samples, &v.ActiveVersion,
-		&v.Fingerprint, &v.FieldCount, &v.CriticalCount, &v.NewFields, &v.Suspicious24h, &v.Breaking24h, &v.OpenIncidents,
+		&v.Fingerprint, &v.FieldCount, &v.CriticalCount, &v.NewFields, &v.Suspicious24h, &v.Breaking24h, &v.Repaired24h, &v.OpenIncidents,
 		&v.FirstSeenAt, &v.LastSeenAt)
 	v.MinSamples = s.ContractMinSamples
 	return v, err
@@ -121,6 +123,7 @@ type violationView struct {
 	Expected  string    `json:"expected"`
 	Actual    string    `json:"actual"`
 	CreatedAt time.Time `json:"created_at"`
+	Repaired  bool      `json:"repaired"` // fixed by a repair rule before forwarding
 }
 
 // loadSchemas returns the observed schema, the active version's schema (nil if
@@ -205,7 +208,7 @@ func (s *Server) getContract(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	rows, err = s.Pool.Query(r.Context(), `
-		SELECT event_id, severity, kind, path, expected, actual, created_at
+		SELECT event_id, severity, kind, path, expected, actual, created_at, repaired
 		FROM contract_violations WHERE contract_id = $1 ORDER BY created_at DESC, id DESC LIMIT 50`, id)
 	if err != nil {
 		return err
@@ -382,6 +385,12 @@ type incidentView struct {
 	Resolution    string      `json:"resolution"`
 	ResolvedBy    string      `json:"resolved_by"` // user/api key id, or "system"
 	Replay        *replayView `json:"replay"`      // latest replay, if any
+	RepairRule    *struct {
+		ID           string `json:"id"`
+		Name         string `json:"name"`
+		Enabled      bool   `json:"enabled"`
+		AppliedCount int64  `json:"applied_count"`
+	} `json:"repair_rule"` // the latest rule created to fix this incident, if any
 }
 
 func (s *Server) listIncidents(w http.ResponseWriter, r *http.Request) error {
@@ -400,13 +409,17 @@ func (s *Server) listIncidents(w http.ResponseWriter, r *http.Request) error {
 		SELECT i.id, i.webhook_id, coalesce(w.name, ''), i.contract_id, c.event_type, i.kind, i.path, i.severity, i.status,
 		       i.title, i.expected, i.actual, i.event_count, i.first_seen_at, i.last_seen_at, i.sample_event_id,
 		       i.resolved_at, i.resolution, i.resolved_by,
-		       rp.id, rp.status, rp.total, rp.succeeded, rp.failed, rp.created_by, rp.created_at, rp.completed_at
+		       rp.id, rp.status, rp.total, rp.succeeded, rp.failed, rp.created_by, rp.created_at, rp.completed_at,
+		       rr.id, rr.name, rr.enabled, rr.applied_count
 		FROM incidents i
 		JOIN contracts c ON c.id = i.contract_id
 		LEFT JOIN webhooks w ON w.id = i.webhook_id
 		LEFT JOIN LATERAL (
 			SELECT * FROM replays WHERE incident_id = i.id ORDER BY created_at DESC LIMIT 1
 		) rp ON true
+		LEFT JOIN LATERAL (
+			SELECT * FROM repair_rules WHERE incident_id = i.id ORDER BY created_at DESC LIMIT 1
+		) rr ON true
 		WHERE i.org_id = $1 AND i.status = $2
 		ORDER BY i.last_seen_at DESC LIMIT 200`, orgID, status)
 	if err != nil {
@@ -420,11 +433,23 @@ func (s *Server) listIncidents(w http.ResponseWriter, r *http.Request) error {
 		var rpID, rpStatus, rpBy *string
 		var rpTotal, rpOK, rpFailed *int
 		var rpCreated *time.Time
+		var rrID, rrName *string
+		var rrEnabled *bool
+		var rrApplied *int64
 		if err := rows.Scan(&v.ID, &v.WebhookID, &v.WebhookName, &v.ContractID, &v.EventType, &v.Kind, &v.Path, &v.Severity,
 			&v.Status, &v.Title, &v.Expected, &v.Actual, &v.EventCount, &v.FirstSeenAt, &v.LastSeenAt, &v.SampleEventID,
 			&v.ResolvedAt, &v.Resolution, &v.ResolvedBy,
-			&rpID, &rpStatus, &rpTotal, &rpOK, &rpFailed, &rpBy, &rpCreated, &rp.CompletedAt); err != nil {
+			&rpID, &rpStatus, &rpTotal, &rpOK, &rpFailed, &rpBy, &rpCreated, &rp.CompletedAt,
+			&rrID, &rrName, &rrEnabled, &rrApplied); err != nil {
 			return err
+		}
+		if rrID != nil {
+			v.RepairRule = &struct {
+				ID           string `json:"id"`
+				Name         string `json:"name"`
+				Enabled      bool   `json:"enabled"`
+				AppliedCount int64  `json:"applied_count"`
+			}{*rrID, *rrName, *rrEnabled, *rrApplied}
 		}
 		if rpID != nil {
 			rp.ID, rp.Status, rp.Total, rp.Succeeded, rp.Failed, rp.CreatedBy, rp.CreatedAt = *rpID, *rpStatus, *rpTotal, *rpOK, *rpFailed, *rpBy, *rpCreated

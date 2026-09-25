@@ -30,6 +30,17 @@ type Request struct {
 	Body        []byte
 	ContentType string
 	Headers     map[string]string // original (masked) provider headers, lowercase names
+	// Set when repair rules changed Body: the rules' IDs (sent as Relaya-Repaired) and names (attempt log).
+	RepairedIDs   []string
+	RepairedNames []string
+}
+
+// bodyBound reports whether a provider header is computed over the original
+// body (a signature or digest). Those are dropped when Relaya sends a repaired
+// body, since they would no longer match; Relaya-Signature covers what is sent.
+func bodyBound(name string) bool {
+	return strings.Contains(name, "signature") || strings.Contains(name, "hmac") ||
+		name == "digest" || name == "content-md5" || name == "x-hub-signature"
 }
 
 // Sender performs attempts with a policy-enforcing HTTP client.
@@ -71,7 +82,13 @@ func (s *Sender) Send(ctx context.Context, r Request) Result {
 		if skipHeaders[name] || strings.HasPrefix(name, "x-forwarded-") || strings.HasPrefix(name, "relaya-") || v == mask.Redacted {
 			continue
 		}
+		if len(r.RepairedIDs) > 0 && bodyBound(name) {
+			continue
+		}
 		req.Header.Set(name, v)
+	}
+	if len(r.RepairedIDs) > 0 {
+		req.Header.Set("Relaya-Repaired", strings.Join(r.RepairedIDs, ","))
 	}
 	ct := r.ContentType
 	if ct == "" {

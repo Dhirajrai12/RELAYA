@@ -182,7 +182,7 @@ func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) error {
 	e.Delivery = summarize(e.Deliveries)
 
 	rows, err := s.Pool.Query(r.Context(), `
-		SELECT event_id, severity, kind, path, expected, actual, created_at
+		SELECT event_id, severity, kind, path, expected, actual, created_at, repaired
 		FROM contract_violations WHERE event_id = $1 AND org_id = $2 ORDER BY id`, id, orgID)
 	if err != nil {
 		return err
@@ -284,13 +284,15 @@ func (s *Server) eventStats(w http.ResponseWriter, r *http.Request) error {
 		OpenIncidents int `json:"open_incidents"`
 		Breaking24h   int `json:"breaking_24h"`
 		Suspicious24h int `json:"suspicious_24h"`
+		Repaired24h   int `json:"repaired_24h"`
 	}
 	if err := s.Pool.QueryRow(ctx, `
 		SELECT (SELECT count(*) FROM incidents WHERE org_id = $1 AND status = 'open'),
-		       count(*) FILTER (WHERE severity = 'breaking'),
-		       count(*) FILTER (WHERE severity = 'suspicious')
+		       count(*) FILTER (WHERE severity = 'breaking' AND NOT repaired),
+		       count(*) FILTER (WHERE severity = 'suspicious' AND NOT repaired),
+		       count(*) FILTER (WHERE repaired)
 		FROM contract_violations WHERE org_id = $1 AND created_at > now() - interval '24 hours'`, orgID).
-		Scan(&contracts.OpenIncidents, &contracts.Breaking24h, &contracts.Suspicious24h); err != nil {
+		Scan(&contracts.OpenIncidents, &contracts.Breaking24h, &contracts.Suspicious24h, &contracts.Repaired24h); err != nil {
 		return err
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"hours": hours, "totals": total, "webhooks": health, "forwarded": fwd, "contracts": contracts})

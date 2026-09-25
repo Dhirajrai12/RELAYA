@@ -100,6 +100,7 @@ type attemptView struct {
 	Error        string    `json:"error"`
 	ResponseBody string    `json:"response_body"`
 	Outcome      string    `json:"outcome"`
+	RepairedBy   []string  `json:"repaired_by"` // repair rules that changed the body sent
 }
 
 func (s *Server) getDelivery(w http.ResponseWriter, r *http.Request) error {
@@ -116,7 +117,7 @@ func (s *Server) getDelivery(w http.ResponseWriter, r *http.Request) error {
 		return notFoundIfNoRows(err)
 	}
 	rows, err := s.Pool.Query(r.Context(), `
-		SELECT attempt, started_at, duration_ms, status_code, error, response_body, outcome
+		SELECT attempt, started_at, duration_ms, status_code, error, response_body, outcome, repaired_by
 		FROM delivery_attempts WHERE delivery_id = $1 ORDER BY attempt DESC, id DESC`, id)
 	if err != nil {
 		return err

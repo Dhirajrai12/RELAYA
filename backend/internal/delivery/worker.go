@@ -14,6 +14,7 @@ import (
 
 	"relaya/internal/db"
 	"relaya/internal/realtime"
+	"relaya/internal/repair"
 	"relaya/internal/vault"
 )
 
@@ -147,12 +148,29 @@ func (w *Worker) load(ctx context.Context, j job) (target, Request, error) {
 		r.ReplayID = *j.ReplayID
 	}
 	var headers []byte
+	var webhookID string
 	err = w.Pool.QueryRow(ctx, `
-		SELECT type, content_type, headers, payload FROM events
+		SELECT webhook_id, type, content_type, headers, payload FROM events
 		WHERE id = $1 AND received_at = $2`, j.EventID, j.EventReceived).
-		Scan(&r.EventType, &r.ContentType, &headers, &r.Body)
+		Scan(&webhookID, &r.EventType, &r.ContentType, &headers, &r.Body)
 	if err != nil {
 		return t, r, fmt.Errorf("load event: %w", err)
+	}
+	// Repair rules run at send time, so retries and replays use the current rules.
+	rules, err := repair.Load(ctx, w.Pool, webhookID, r.EventType)
+	if err != nil {
+		return t, r, fmt.Errorf("load repair rules: %w", err)
+	}
+	if len(rules) > 0 {
+		res, err := repair.Apply(r.Body, r.EventType, rules)
+		if err != nil {
+			return t, r, fmt.Errorf("apply repair rules: %w", err)
+		}
+		if res.Changed {
+			r.Body = res.Body
+			r.RepairedIDs = res.Applied
+			r.RepairedNames = repair.Names(rules, res.Applied)
+		}
 	}
 	if err := json.Unmarshal(headers, &r.Headers); err != nil {
 		return t, r, err
@@ -188,12 +206,12 @@ func (w *Worker) process(ctx context.Context, j job) {
 	if outcome == Retry && j.Attempt >= max(t.MaxAttempts, 1) {
 		outcome = Failed
 	}
-	if err := w.record(ctx, j, started, res, outcome, sent); err != nil {
+	if err := w.record(ctx, j, started, res, outcome, sent, req); err != nil {
 		slog.Error("record delivery attempt", "delivery", j.ID, "err", err)
 	}
 }
 
-func (w *Worker) record(ctx context.Context, j job, started time.Time, res Result, outcome Outcome, sent bool) error {
+func (w *Worker) record(ctx context.Context, j job, started time.Time, res Result, outcome Outcome, sent bool, req Request) error {
 	errText := ""
 	if res.Err != nil {
 		errText = res.Err.Error()
@@ -204,10 +222,17 @@ func (w *Worker) record(ctx context.Context, j job, started time.Time, res Resul
 	}
 	return pgx.BeginFunc(ctx, w.Pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO delivery_attempts (delivery_id, attempt, started_at, duration_ms, status_code, error, response_body, outcome, replay_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-			j.ID, j.Attempt, started, res.Duration.Milliseconds(), code, errText, res.Body, string(outcome), j.ReplayID); err != nil {
+			INSERT INTO delivery_attempts (delivery_id, attempt, started_at, duration_ms, status_code, error, response_body, outcome, replay_id, repaired_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			j.ID, j.Attempt, started, res.Duration.Milliseconds(), code, errText, res.Body, string(outcome), j.ReplayID, nonNil(req.RepairedNames)); err != nil {
 			return err
+		}
+		if sent && len(req.RepairedIDs) > 0 {
+			if _, err := tx.Exec(ctx, `
+				UPDATE repair_rules SET applied_count = applied_count + 1, last_applied_at = now()
+				WHERE id = ANY($1)`, req.RepairedIDs); err != nil {
+				return err
+			}
 		}
 		var status string
 		var err error
@@ -247,4 +272,11 @@ func (w *Worker) record(ctx context.Context, j job, started time.Time, res Resul
 			Type: "delivery", OrgID: j.OrgID, EventID: j.EventID, DeliveryID: j.ID, DestinationID: j.DestinationID, Status: status,
 		})
 	})
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
