@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/auth'
 import { useCreateOrg, useMe } from '@/lib/queries'
 import { useHasRole } from '@/lib/role'
 import { LoginPage, SignupPage } from '@/pages/auth'
+import { LandingPage } from '@/pages/landing/landing'
 import { EventsPage } from '@/pages/events'
 import { OverviewPage } from '@/pages/overview'
 import { ProjectsPage } from '@/pages/projects'
@@ -24,6 +25,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={token ? <Navigate to="/overview" replace /> : <LoginPage />} />
       <Route path="/signup" element={token ? <Navigate to="/overview" replace /> : <SignupPage />} />
+      {/* Signed-out visitors land on the marketing page; signed-in users go to the app. */}
+      <Route path="/" element={token ? <Navigate to="/overview" replace /> : <LandingPage />} />
       <Route path="/*" element={token ? <SignedIn /> : <Navigate to="/login" replace />} />
     </Routes>
   )

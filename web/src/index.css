@@ -35,6 +35,14 @@
     --color-primary: var(--primary);
     --color-brand: var(--brand);
     --color-brand-foreground: var(--brand-foreground);
+    --color-l-bg: var(--l-bg);
+    --color-l-soft: var(--l-soft);
+    --color-l-surface: var(--l-surface);
+    --color-l-border: var(--l-border);
+    --color-l-text: var(--l-text);
+    --color-l-muted: var(--l-muted);
+    --color-l-subtle: var(--l-subtle);
+    --color-l-accent: var(--l-accent);
     --color-popover-foreground: var(--popover-foreground);
     --color-popover: var(--popover);
     --color-card-foreground: var(--card-foreground);
@@ -168,4 +176,196 @@
 
 body {
     -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Landing page theme (light + dark) ---------------------------------------- */
+:root {
+    --l-bg: #ffffff;
+    --l-soft: #f4f7f6;
+    --l-surface: #ffffff;
+    --l-border: rgb(11 21 32 / 0.1);
+    --l-text: #0b1520;
+    --l-muted: #475467;
+    --l-subtle: #667085;
+    --l-accent: #087a58; /* accent as text: 5.4:1 on white */
+    --l-grad-a: #14b886;
+    --l-grad-b: #087a58;
+    --l-grid: rgb(11 21 32 / 0.05);
+    --l-glow: rgb(20 184 134 / 0.14);
+}
+
+.dark {
+    --l-bg: #0b1520;
+    --l-soft: rgb(255 255 255 / 0.025);
+    --l-surface: #101a26;
+    --l-border: rgb(255 255 255 / 0.1);
+    --l-text: #ffffff;
+    --l-muted: #94a3b8;
+    --l-subtle: #64748b;
+    --l-accent: #3ee0a8;
+    --l-grad-a: #3ee0a8;
+    --l-grad-b: #14b886;
+    --l-grid: rgb(255 255 255 / 0.04);
+    --l-glow: rgb(20 184 134 / 0.22);
+}
+
+/* ---- Landing motion ---------------------------------------------------------------- */
+
+/* Scroll reveal: .reveal elements fade/slide in once data-visible is set by <Reveal>. */
+.reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    filter: blur(6px);
+    transition:
+        opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms),
+        transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms),
+        filter 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms);
+}
+.reveal[data-visible='true'] {
+    opacity: 1;
+    transform: none;
+    filter: none;
+}
+
+/* Children that animate once their .reveal parent is visible. */
+.grow-bar {
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
+    transition-delay: calc(var(--i, 0) * 60ms + 200ms);
+}
+.reveal[data-visible='true'] .grow-bar {
+    transform: scaleY(1);
+}
+.slide-row {
+    opacity: 0;
+    transform: translateX(-12px);
+    transition:
+        opacity 0.5s ease,
+        transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+    transition-delay: calc(var(--i, 0) * 140ms + 250ms);
+}
+.reveal[data-visible='true'] .slide-row {
+    opacity: 1;
+    transform: none;
+}
+
+/* Spotlight card: a soft glow that follows the pointer (--mx/--my set in JS). */
+.spotlight::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), var(--l-glow), transparent 45%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+.spotlight:hover::before {
+    opacity: 1;
+}
+
+@keyframes l-float {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-8px);
+    }
+}
+.l-float {
+    animation: l-float 6s ease-in-out infinite;
+}
+/* Hold still while the visitor is interacting with it (clicking tabs). */
+.l-float:hover,
+.l-float:focus-within {
+    animation-play-state: paused;
+}
+
+@keyframes l-marquee {
+    to {
+        transform: translateX(-50%);
+    }
+}
+.l-marquee {
+    animation: l-marquee 28s linear infinite;
+}
+.l-marquee:hover {
+    animation-play-state: paused;
+}
+
+@keyframes l-shimmer {
+    to {
+        background-position: 200% center;
+    }
+}
+.l-shimmer {
+    background-size: 200% auto;
+    animation: l-shimmer 6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .reveal,
+    .grow-bar,
+    .slide-row {
+        opacity: 1;
+        transform: none;
+        filter: none;
+        transition: none;
+    }
+    .l-float,
+    .l-marquee,
+    .l-shimmer {
+        animation: none;
+    }
+}
+
+/* Typing caret + tab autoplay progress for the landing code demo. */
+@keyframes l-blink {
+    50% {
+        opacity: 0;
+    }
+}
+.l-caret {
+    animation: l-blink 1s steps(1) infinite;
+}
+@keyframes l-progress {
+    from {
+        transform: scaleX(0);
+    }
+    to {
+        transform: scaleX(1);
+    }
+}
+.l-progress {
+    transform-origin: left;
+    animation: l-progress var(--l-progress-ms, 4000ms) linear forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+    .l-caret,
+    .l-progress {
+        animation: none;
+    }
+}
+
+/* Never allow sideways scrolling/panning (iOS Safari lets transformed or blurred
+   layers escape overflow:hidden). `clip` doesn't create a scroll container, so
+   sticky headers keep working. */
+html,
+body {
+    overflow-x: hidden;
+}
+@supports (overflow-x: clip) {
+    html,
+    body {
+        overflow-x: clip;
+    }
+}
+
+/* No bobbing on phones/tablets: it reads as the layout moving on its own. */
+@media (hover: none), (max-width: 767px) {
+    .l-float {
+        animation: none;
+    }
 }
