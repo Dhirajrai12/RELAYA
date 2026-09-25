@@ -167,6 +167,7 @@ func (w *Worker) process(ctx context.Context, j job) {
 	started := time.Now()
 	t, req, err := w.load(ctx, j)
 	var res Result
+	sent := false // a real HTTP attempt was made (counts toward destination health)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		res = Result{Err: errors.New("event or destination no longer exists")}
@@ -177,6 +178,7 @@ func (w *Worker) process(ctx context.Context, j job) {
 		res = Result{Err: errors.New("destination is disabled")}
 	default:
 		res = w.Sender.Send(ctx, req)
+		sent = true
 	}
 
 	outcome := Classify(res)
@@ -186,12 +188,12 @@ func (w *Worker) process(ctx context.Context, j job) {
 	if outcome == Retry && j.Attempt >= max(t.MaxAttempts, 1) {
 		outcome = Failed
 	}
-	if err := w.record(ctx, j, started, res, outcome); err != nil {
+	if err := w.record(ctx, j, started, res, outcome, sent); err != nil {
 		slog.Error("record delivery attempt", "delivery", j.ID, "err", err)
 	}
 }
 
-func (w *Worker) record(ctx context.Context, j job, started time.Time, res Result, outcome Outcome) error {
+func (w *Worker) record(ctx context.Context, j job, started time.Time, res Result, outcome Outcome, sent bool) error {
 	errText := ""
 	if res.Err != nil {
 		errText = res.Err.Error()
@@ -230,6 +232,11 @@ func (w *Worker) record(ctx context.Context, j job, started time.Time, res Resul
 		}
 		if err != nil {
 			return err
+		}
+		if sent {
+			if err := trackHealth(ctx, tx, j, outcome, res, errText); err != nil {
+				return err
+			}
 		}
 		if j.ReplayID != nil && outcome != Retry {
 			if err := finishReplayDelivery(ctx, tx, j, outcome); err != nil {

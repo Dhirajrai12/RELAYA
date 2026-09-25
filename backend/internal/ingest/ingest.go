@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"relaya/internal/alerts"
 	"relaya/internal/contract"
 	"relaya/internal/delivery"
 	"relaya/internal/httpx"
@@ -173,7 +174,9 @@ func (h *Handler) store(ctx context.Context, ev eventRow, dedup bool) (id string
 			return err
 		}
 		if !dedup {
-			return nil // rejected events are evidence only; never forwarded or checked
+			// Rejected events are evidence only: never forwarded or checked, but alerted
+			// (at most once per webhook per hour).
+			return alertSignatureFailure(ctx, tx, ev.WebhookID)
 		}
 		if contractStatus(ev, dedup) == "pending" {
 			if err := enqueueContractCheck(ctx, tx, id, ev); err != nil {
@@ -318,6 +321,23 @@ func Maintain(ctx context.Context, pool *pgxpool.Pool, dedupRetention, interval 
 			run()
 		}
 	}
+}
+
+// alertSignatureFailure queues a "bad signature" alert unless one was sent for
+// this webhook in the last hour.
+func alertSignatureFailure(ctx context.Context, tx pgx.Tx, webhookID string) error {
+	var orgID, name string
+	err := tx.QueryRow(ctx, `
+		UPDATE webhooks SET last_signature_alert_at = now()
+		WHERE id = $1 AND (last_signature_alert_at IS NULL OR last_signature_alert_at < now() - interval '1 hour')
+		RETURNING org_id, name`, webhookID).Scan(&orgID, &name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil // alerted recently
+	}
+	if err != nil {
+		return err
+	}
+	return alerts.Enqueue(ctx, tx, orgID, alerts.SignatureFailuresAlert(name))
 }
 
 // contractStatus is "pending" for accepted events that can be checked against a

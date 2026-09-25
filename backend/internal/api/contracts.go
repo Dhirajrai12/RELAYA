@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"relaya/internal/alerts"
 	"relaya/internal/audit"
 	"relaya/internal/auth"
 	"relaya/internal/contract"
@@ -307,9 +308,7 @@ func (s *Server) createContractVersion(w http.ResponseWriter, r *http.Request) e
 			// Start observing afresh, so "accept changes" later reflects only newer events.
 			update = `UPDATE contracts SET status = 'active', active_version = $2, updated_at = now(),
 				observed = '{"samples": 0, "fields": {}}', new_fields = '{}' WHERE id = $1`
-			if _, err := tx.Exec(r.Context(), `
-				UPDATE incidents SET status = 'resolved', resolved_at = now(), resolved_by = $2, resolution = $3
-				WHERE contract_id = $1 AND status = 'open'`, id, p.ActorID(), fmt.Sprintf("accepted into contract v%d", created)); err != nil {
+			if err := resolveContractIncidents(r.Context(), tx, id, p.ActorID(), fmt.Sprintf("accepted into contract v%d", created)); err != nil {
 				return err
 			}
 		}
@@ -348,9 +347,7 @@ func (s *Server) relearnContract(w http.ResponseWriter, r *http.Request) error {
 		if tag.RowsAffected() == 0 {
 			return httpx.ErrNotFound
 		}
-		if _, err := tx.Exec(r.Context(), `
-			UPDATE incidents SET status = 'resolved', resolved_at = now(), resolved_by = $2, resolution = 'contract relearning'
-			WHERE contract_id = $1 AND status = 'open'`, id, p.ActorID()); err != nil {
+		if err := resolveContractIncidents(r.Context(), tx, id, p.ActorID(), "contract relearning"); err != nil {
 			return err
 		}
 		return audit.Record(r.Context(), tx, audit.ByPrincipal(p, orgID, "contract.relearn", "contract", id))
@@ -478,11 +475,30 @@ func (s *Server) resolveIncident(w http.ResponseWriter, r *http.Request) error {
 		}
 		e := audit.ByPrincipal(p, orgID, "incident.resolve", "incident", id)
 		e.Reason = in.Resolution
-		return audit.Record(r.Context(), tx, e)
+		if err := audit.Record(r.Context(), tx, e); err != nil {
+			return err
+		}
+		return alerts.NotifyIncidentsResolved(r.Context(), tx, []string{id})
 	})
 	if err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+// resolveContractIncidents closes a contract's open incidents (accept changes,
+// relearn) and queues "resolved" alerts for them.
+func resolveContractIncidents(ctx context.Context, tx pgx.Tx, contractID, by, resolution string) error {
+	rows, err := tx.Query(ctx, `
+		UPDATE incidents SET status = 'resolved', resolved_at = now(), resolved_by = $2, resolution = $3
+		WHERE contract_id = $1 AND status = 'open' RETURNING id`, contractID, by, resolution)
+	if err != nil {
+		return err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	return alerts.NotifyIncidentsResolved(ctx, tx, ids)
 }

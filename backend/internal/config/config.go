@@ -34,6 +34,14 @@ type Config struct {
 	ContractLearnWindow time.Duration
 	// Incidents close themselves after this long without occurrences (0 disables).
 	IncidentAutoResolveAfter time.Duration
+
+	// Alerts. DashboardURL prefixes links in alerts (defaults to INGEST_BASE_URL).
+	DashboardURL string
+	SMTPHost     string // email alerts are disabled when empty
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
 }
 
 // Load reads configuration from the environment, after loading an env file:
@@ -74,6 +82,11 @@ func Load() (Config, error) {
 	}
 	if c.IncidentAutoResolveAfter, err = time.ParseDuration(get("INCIDENT_AUTO_RESOLVE_AFTER", "1h")); err != nil {
 		return c, fmt.Errorf("INCIDENT_AUTO_RESOLVE_AFTER: %w", err)
+	}
+	c.DashboardURL = strings.TrimRight(get("DASHBOARD_URL", c.IngestBaseURL), "/")
+	c.SMTPHost, c.SMTPUsername, c.SMTPPassword, c.SMTPFrom = os.Getenv("SMTP_HOST"), os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"), os.Getenv("SMTP_FROM")
+	if c.SMTPPort, err = strconv.Atoi(get("SMTP_PORT", "587")); err != nil {
+		return c, fmt.Errorf("SMTP_PORT: %w", err)
 	}
 	if c.SessionTTL, err = time.ParseDuration(get("SESSION_TTL", "720h")); err != nil {
 		return c, fmt.Errorf("SESSION_TTL: %w", err)

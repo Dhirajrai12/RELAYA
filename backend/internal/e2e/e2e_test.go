@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"relaya/internal/alerts"
 	"relaya/internal/api"
 	"relaya/internal/auth"
 	"relaya/internal/contract"
@@ -37,6 +38,7 @@ type env struct {
 	ingest  *httptest.Server
 	worker  *delivery.Worker
 	checker *contract.Checker
+	alerts  *alerts.Sender
 }
 
 func setup(t *testing.T) *env {
@@ -80,6 +82,7 @@ func setup(t *testing.T) *env {
 	policy := delivery.Policy{AllowHTTP: true, AllowPrivate: true}
 	srv.DeliveryPolicy = policy
 	srv.Sender = delivery.NewSender(policy)
+	srv.AlertSender = &alerts.Sender{Pool: pool, Vault: srv.Vault, HTTP: policy.Client(), Sign: delivery.Sign, DashboardURL: "https://dash.example"}
 	srv.Hub = realtime.NewHub(pool)
 	hubCtx, stopHub := context.WithCancel(context.Background())
 	t.Cleanup(stopHub)
@@ -88,7 +91,7 @@ func setup(t *testing.T) *env {
 	t.Cleanup(a.Close)
 	w := &delivery.Worker{Pool: pool, Vault: vault.NewPGVault(pool, wrapper), Sender: delivery.NewSender(policy)}
 	checker := &contract.Checker{Pool: pool, MinSamples: 3, LearnWindow: time.Hour}
-	return &env{t: t, api: a, ingest: ing, worker: w, checker: checker}
+	return &env{t: t, api: a, ingest: ing, worker: w, checker: checker, alerts: srv.AlertSender}
 }
 
 // call sends a JSON request and decodes the JSON response into a map.

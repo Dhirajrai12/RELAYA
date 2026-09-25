@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"relaya/internal/alerts"
 	"relaya/internal/db"
 	"relaya/internal/realtime"
 )
@@ -240,14 +241,26 @@ func (c *Checker) recordFinding(ctx context.Context, tx pgx.Tx, q queued, contra
 		return nil
 	}
 	// One open incident per (contract, kind, path); repeats bump its count.
-	_, err := tx.Exec(ctx, `
+	var incidentID string
+	var created bool
+	err := tx.QueryRow(ctx, `
 		INSERT INTO incidents (org_id, webhook_id, contract_id, kind, path, title, expected, actual, event_count, sample_event_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9)
 		ON CONFLICT (contract_id, kind, path) WHERE status = 'open'
 		DO UPDATE SET event_count = incidents.event_count + 1, last_seen_at = now(),
-		              actual = EXCLUDED.actual, sample_event_id = EXCLUDED.sample_event_id`,
-		q.OrgID, q.WebhookID, contractID, f.Kind, f.Path, Title(q.EventType, f), f.Expected, f.Actual, q.EventID)
-	return err
+		              actual = EXCLUDED.actual, sample_event_id = EXCLUDED.sample_event_id
+		RETURNING id, (xmax = 0)`,
+		q.OrgID, q.WebhookID, contractID, f.Kind, f.Path, Title(q.EventType, f), f.Expected, f.Actual, q.EventID).
+		Scan(&incidentID, &created)
+	if err != nil || !created {
+		return err
+	}
+	// One alert per incident, not per event.
+	orgID, a, err := alerts.IncidentOpenedAlert(ctx, tx, incidentID)
+	if err != nil {
+		return err
+	}
+	return alerts.Enqueue(ctx, tx, orgID, a)
 }
 
 // Title is the one-line incident summary shown in alerts and the dashboard.

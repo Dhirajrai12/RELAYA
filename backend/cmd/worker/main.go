@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 
+	"relaya/internal/alerts"
 	"relaya/internal/config"
 	"relaya/internal/contract"
 	"relaya/internal/db"
@@ -49,6 +50,12 @@ func main() {
 	checker := &contract.Checker{Pool: pool, MinSamples: cfg.ContractMinSamples, LearnWindow: cfg.ContractLearnWindow,
 		AutoResolveAfter: cfg.IncidentAutoResolveAfter}
 	go checker.Run(ctx)
+
+	alertSender := &alerts.Sender{
+		Pool: pool, Vault: vault.NewPGVault(pool, wrapper), HTTP: policy.Client(), Sign: delivery.Sign, DashboardURL: cfg.DashboardURL,
+		SMTP: alerts.SMTP{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.SMTPFrom},
+	}
+	go alertSender.Run(ctx)
 
 	slog.Info("worker started", "concurrency", cfg.WorkerConcurrency, "allow_http", policy.AllowHTTP, "allow_private", policy.AllowPrivate)
 	w.Run(ctx)

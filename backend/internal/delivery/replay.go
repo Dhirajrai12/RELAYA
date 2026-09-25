@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"relaya/internal/alerts"
 	"relaya/internal/audit"
 	"relaya/internal/realtime"
 )
@@ -58,6 +59,9 @@ func finishReplayDelivery(ctx context.Context, tx pgx.Tx, j job, outcome Outcome
 				TargetType: "incident", TargetID: *incidentID, Reason: note,
 				Metadata: map[string]any{"replay_id": *j.ReplayID},
 			}); err != nil {
+				return err
+			}
+			if err := alerts.NotifyIncidentsResolved(ctx, tx, []string{*incidentID}); err != nil {
 				return err
 			}
 		}

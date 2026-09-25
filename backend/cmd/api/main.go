@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 
+	"relaya/internal/alerts"
 	"relaya/internal/api"
 	"relaya/internal/auth"
 	"relaya/internal/config"
@@ -53,6 +54,10 @@ func main() {
 	srv.StreamOrigins = streamOrigins(cfg)
 	srv.ContractMinSamples = cfg.ContractMinSamples
 	srv.IncidentAutoResolveAfter = cfg.IncidentAutoResolveAfter
+	srv.AlertSender = &alerts.Sender{
+		Pool: pool, Vault: srv.Vault, HTTP: srv.DeliveryPolicy.Client(), Sign: delivery.Sign, DashboardURL: cfg.DashboardURL,
+		SMTP: alerts.SMTP{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.SMTPFrom},
+	}
 	go srv.Hub.Run(ctx)
 	h := httpx.Chain(srv.Routes(), httpx.Log, httpx.Recover, httpx.CORS(cfg.AllowedOrigins))
 	if err := server.Run(ctx, "api", cfg.APIAddr, h); err != nil {

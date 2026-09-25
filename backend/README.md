@@ -176,6 +176,34 @@ A missing object is reported once at its top path (breaking if any critical fiel
 
 Events can be filtered with `?contract_status=breaking`, and the event detail includes its `violations`.
 
+## Alerts
+
+Channels (Settings → Alerts) get a message when something needs a human. Each channel picks which kinds it wants:
+
+| Kind | When |
+|---|---|
+| `incident_opened` | A contract incident opens (once per incident, not per occurrence) |
+| `incident_resolved` | An incident resolves: by hand, accepted change, relearn, auto-resolve or verified replay |
+| `destination_failing` | A destination fails 3 attempts in a row (once per outage) |
+| `destination_recovered` | The next successful attempt after a failing alert |
+| `signature_failures` | A webhook rejects an event for a bad signature (at most once an hour per webhook) |
+
+Channel types:
+- **Slack**: an Incoming Webhook URL (`https://hooks.slack.com/…`), stored encrypted.
+- **Email**: to a member of the org. Needs the `SMTP_*` settings; without them the channel can be created but sends fail.
+- **Webhook**: JSON `{type, title, body, link, org_id, alert_id, sent_at}`, signed like deliveries (`Relaya-Signature`) with a secret shown once. Same outbound URL rules as destinations.
+
+Alerts are queued in the same transaction as the change that caused them and sent by the worker (4 attempts: now, +1m, +5m, +30m).
+
+| Method & path | Min role |
+|---|---|
+| `GET /v1/orgs/{org}/alert-settings` (kinds, whether email is configured) | member |
+| `GET /v1/orgs/{org}/alert-channels` (with sent/failed counts for 7 days) | member |
+| `POST /v1/orgs/{org}/alert-channels` `{"type", "name", "url" or "email", "events"}` | admin |
+| `PATCH …/alert-channels/{channel}` `{"name", "events", "enabled"}`, `DELETE …` | admin |
+| `POST …/alert-channels/{channel}/test` (sends now, returns `{ok, error}`) | admin |
+| `GET /v1/orgs/{org}/alerts` (last 100) | member |
+
 ## Realtime (WebSocket)
 
 Dashboards stay live without refreshing: `GET /v1/orgs/{org}/stream` upgrades to a WebSocket.

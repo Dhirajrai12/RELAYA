@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"relaya/internal/alerts"
 	"relaya/internal/auth"
 	"relaya/internal/delivery"
 	"relaya/internal/httpx"
@@ -40,6 +41,8 @@ type Server struct {
 	ContractMinSamples int
 	// Shown in the dashboard; the worker does the auto-resolving.
 	IncidentAutoResolveAfter time.Duration
+	// Sends test alerts synchronously; the worker sends the rest.
+	AlertSender *alerts.Sender
 }
 
 func (s *Server) Routes() http.Handler {
@@ -113,6 +116,14 @@ func (s *Server) Routes() http.Handler {
 	h("POST /v1/orgs/{org}/incidents/{incident}/resolve", s.resolveIncident)
 	h("GET /v1/orgs/{org}/incidents/{incident}/replay", s.previewReplay)
 	h("POST /v1/orgs/{org}/incidents/{incident}/replay", s.startReplay)
+
+	h("GET /v1/orgs/{org}/alert-settings", s.alertSettings)
+	h("GET /v1/orgs/{org}/alert-channels", s.listAlertChannels)
+	h("POST /v1/orgs/{org}/alert-channels", s.createAlertChannel)
+	h("PATCH /v1/orgs/{org}/alert-channels/{channel}", s.updateAlertChannel)
+	h("DELETE /v1/orgs/{org}/alert-channels/{channel}", s.deleteAlertChannel)
+	h("POST /v1/orgs/{org}/alert-channels/{channel}/test", s.testAlertChannel)
+	h("GET /v1/orgs/{org}/alerts", s.listAlerts)
 
 	h("GET /v1/orgs/{org}/audit-logs", s.listAuditLogs)
 

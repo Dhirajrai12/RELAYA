@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"relaya/internal/alerts"
 	"relaya/internal/audit"
 )
 
@@ -57,6 +58,7 @@ func (c *Checker) AutoResolve(ctx context.Context, after time.Duration) (int, er
 		return 0, err
 	}
 	// Audit (which also pushes a realtime "change" so dashboards update).
+	ids := make([]string, 0, len(done))
 	for _, r := range done {
 		if err := audit.Record(ctx, tx, audit.Entry{
 			OrgID: r.org, ActorType: "system", ActorID: "auto-resolve", Action: "incident.resolve",
@@ -64,6 +66,10 @@ func (c *Checker) AutoResolve(ctx context.Context, after time.Duration) (int, er
 		}); err != nil {
 			return 0, err
 		}
+		ids = append(ids, r.id)
+	}
+	if err := alerts.NotifyIncidentsResolved(ctx, tx, ids); err != nil {
+		return 0, err
 	}
 	return len(done), tx.Commit(ctx)
 }
