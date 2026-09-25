@@ -7,6 +7,7 @@ import { EventContractStatusLabel, FindingDiff, SeverityBadge } from '@/componen
 import { EventDeliveries, EventDeliveryState } from '@/components/delivery'
 import { LiveIndicator } from '@/components/live-indicator'
 import { SimpleSelect } from '@/components/simple-select'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -95,6 +96,7 @@ export function EventsPage() {
           options={[
             { value: '', label: 'Any contract result' },
             { value: 'breaking', label: 'Breaking' },
+            { value: 'repaired', label: 'Repaired' },
             { value: 'suspicious', label: 'Warning' },
             { value: 'compatible', label: 'New fields' },
             { value: 'ok', label: 'Matches' },
@@ -324,6 +326,11 @@ function EventBody({ e }: { e: EventDetail }) {
                 <span>{kindLabel(v.kind)}</span>
                 <span className="break-all font-mono text-xs">{v.path}</span>
                 <FindingDiff expected={v.expected} actual={v.actual} />
+                {v.repaired && (
+                  <Badge variant="outline" className="border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-400">
+                    fixed by a repair rule
+                  </Badge>
+                )}
               </li>
             ))}
           </ul>

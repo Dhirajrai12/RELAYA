@@ -68,8 +68,8 @@ export function OverviewPage() {
             value={s.contracts.open_incidents}
             icon={ShieldAlertIcon}
             sub={
-              s.contracts.breaking_24h || s.contracts.suspicious_24h
-                ? `${s.contracts.breaking_24h} breaking · ${s.contracts.suspicious_24h} warnings (24h)`
+              s.contracts.breaking_24h || s.contracts.suspicious_24h || s.contracts.repaired_24h
+                ? `${s.contracts.breaking_24h} breaking · ${s.contracts.suspicious_24h} warnings${s.contracts.repaired_24h ? ` · ${s.contracts.repaired_24h} repaired` : ''} (24h)`
                 : lastAt
                   ? `Last delivery ${timeAgo(lastAt)}`
                   : 'Contracts learn from your first events'

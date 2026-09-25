@@ -4,6 +4,10 @@ import { del, get, patch, post } from './api'
 import { useAuth } from './auth'
 import { useLiveInterval } from './realtime'
 import type {
+  RepairOp,
+  RepairPreview,
+  RepairRule,
+  RepairSuggestion,
   AlertChannel,
   AlertLogEntry,
   AlertSettings,
@@ -360,6 +364,7 @@ export function useContract(id: string) {
   return useQuery({
     queryKey: ['contract', orgId, id],
     queryFn: () => get<ContractDetail>(orgPath(orgId, `/contracts/${id}`)),
+    enabled: !!id,
   })
 }
 
@@ -607,5 +612,79 @@ export function useTestAlertChannel() {
       qc.invalidateQueries({ queryKey: ['alerts', orgId] })
       qc.invalidateQueries({ queryKey: ['alert-channels', orgId] })
     },
+  })
+}
+
+// ---- repair rules ------------------------------------------------------------------
+
+export function useRepairRules(webhookId?: string) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['repair-rules', orgId, webhookId ?? 'all'],
+    queryFn: () => get<List<RepairRule>>(orgPath(orgId, '/repair-rules' + (webhookId ? `?webhook_id=${webhookId}` : ''))),
+  })
+}
+
+export interface RepairRuleInput {
+  webhook_id?: string
+  event_type?: string
+  name?: string
+  ops?: RepairOp[]
+  enabled?: boolean
+  incident_id?: string
+}
+
+export function useCreateRepairRule() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: RepairRuleInput) => post<RepairRule>(orgPath(orgId, '/repair-rules'), v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['repair-rules', orgId] })
+      qc.invalidateQueries({ queryKey: ['incidents', orgId] })
+    },
+  })
+}
+
+export function useUpdateRepairRule() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...v }: RepairRuleInput & { id: string }) => patch<RepairRule>(orgPath(orgId, `/repair-rules/${id}`), v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['repair-rules', orgId] })
+      qc.invalidateQueries({ queryKey: ['incidents', orgId] })
+    },
+  })
+}
+
+export function useDeleteRepairRule() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => del(orgPath(orgId, `/repair-rules/${id}`)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['repair-rules', orgId] })
+      qc.invalidateQueries({ queryKey: ['incidents', orgId] })
+    },
+  })
+}
+
+export function usePreviewRepair() {
+  const orgId = useOrgId()
+  return useMutation({
+    mutationFn: (v: { webhook_id: string; event_type: string; ops: RepairOp[]; event_id?: string; rule_id?: string }) =>
+      post<RepairPreview>(orgPath(orgId, '/repair-rules/preview'), v),
+  })
+}
+
+export function useRepairSuggestion(incidentId: string | null) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['repair-suggestion', orgId, incidentId],
+    queryFn: () => get<RepairSuggestion>(orgPath(orgId, `/incidents/${incidentId}/repair-suggestion`)),
+    enabled: !!incidentId,
+    retry: false,
+    staleTime: 60_000,
   })
 }

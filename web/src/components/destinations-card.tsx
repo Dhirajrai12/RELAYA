@@ -82,7 +82,7 @@ function DestinationRow({ d, onSecret }: { d: Destination; onSecret: (s: string)
   return (
     <li className="p-4">
       <div className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-56">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{d.name}</span>
             {!d.enabled && <Badge variant="outline">disabled</Badge>}

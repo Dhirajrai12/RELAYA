@@ -39,6 +39,7 @@ function keysFor(orgId: string, m: Message): QueryKey[] {
         ['event-stats', orgId],
         ['destinations', orgId],
         ['incidents', orgId], // replay progress
+        ['repair-rules', orgId], // applied counts
         ...(m.event_id ? [['event', orgId, m.event_id]] : []),
         ...(m.delivery_id ? [['delivery', orgId, m.delivery_id]] : []),
       ]
@@ -68,6 +69,7 @@ function keysFor(orgId: string, m: Message): QueryKey[] {
         replay: [['incidents', orgId], ['event-stats', orgId], ['events', orgId]],
         alert_channel: [['alert-channels', orgId], ['alerts', orgId]],
         alert: [['alerts', orgId], ['alert-channels', orgId]],
+        repair_rule: [['repair-rules', orgId], ['incidents', orgId]],
       }
       return keys.concat(map[area] ?? [])
     }

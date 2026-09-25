@@ -15,6 +15,7 @@ import { errorMessage } from '@/lib/api'
 import { providerLabel, timeAgo } from '@/lib/format'
 import { ContractStateBadge } from '@/components/contract'
 import { DestinationsCard } from '@/components/destinations-card'
+import { RepairRulesCard } from '@/components/repair'
 import { useContracts, useDeleteWebhook, useEvents, useRotateWebhookURL, useUpdateWebhook, useWebhook } from '@/lib/queries'
 import { useCanManage } from '@/lib/role'
 import type { Webhook } from '@/lib/types'
@@ -101,6 +102,8 @@ function WebhookView({ w }: { w: Webhook }) {
         </Card>
 
         <DestinationsCard webhookId={w.id} />
+
+        <RepairRulesCard webhookId={w.id} />
 
         <WebhookContracts webhookId={w.id} />
 

@@ -135,7 +135,7 @@ function DeliveryItem({ d }: { d: Delivery }) {
   return (
     <li className="rounded-lg border">
       <div className="flex flex-wrap items-start gap-3 p-3">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-56">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{d.destination_name}</span>
             <DeliveryStatusBadge status={d.status} />
@@ -201,6 +201,9 @@ function Attempts({ id }: { id: string }) {
               {timeAgo(a.started_at)}
             </span>
           </div>
+          {a.repaired_by?.length > 0 && (
+            <div className="break-words text-violet-700 dark:text-violet-400">Sent repaired by: {a.repaired_by.join(', ')}</div>
+          )}
           {a.error && <div className="text-red-700 dark:text-red-400">{a.error}</div>}
           {a.response_body && (
             <pre className="max-h-32 overflow-auto rounded border bg-muted p-2 font-mono text-[11px]">{a.response_body}</pre>

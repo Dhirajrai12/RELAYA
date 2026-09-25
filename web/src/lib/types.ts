@@ -132,7 +132,7 @@ export interface EventStats {
   totals: { received: number; rejected: number }
   webhooks: WebhookHealth[]
   forwarded: { succeeded: number; failed: number; in_progress: number }
-  contracts: { open_incidents: number; breaking_24h: number; suspicious_24h: number }
+  contracts: { open_incidents: number; breaking_24h: number; suspicious_24h: number; repaired_24h: number }
 }
 
 export type EventDeliveryState = 'none' | 'pending' | 'delivered' | 'failed'
@@ -183,6 +183,8 @@ export interface DeliveryAttempt {
   error: string
   response_body: string
   outcome: 'succeeded' | 'retry' | 'failed'
+  /** Repair rules that changed the body sent in this attempt. */
+  repaired_by: string[]
 }
 
 export interface TestDeliveryResult {
@@ -193,7 +195,7 @@ export interface TestDeliveryResult {
   error: string
 }
 
-export type EventContractStatus = 'none' | 'pending' | 'learning' | 'ok' | 'compatible' | 'suspicious' | 'breaking'
+export type EventContractStatus = 'none' | 'pending' | 'learning' | 'ok' | 'compatible' | 'suspicious' | 'breaking' | 'repaired'
 export type ContractState = 'learning' | 'proposed' | 'active'
 
 export interface Contract {
@@ -211,6 +213,8 @@ export interface Contract {
   new_fields: number
   suspicious_24h: number
   breaking_24h: number
+  /** Findings a repair rule fixed before forwarding. */
+  repaired_24h: number
   open_incidents: number
   first_seen_at: string
   last_seen_at: string
@@ -243,6 +247,8 @@ export interface Violation {
   expected: string
   actual: string
   created_at: string
+  /** Fixed by a repair rule before forwarding: no incident. */
+  repaired: boolean
 }
 
 export interface ContractDetail {
@@ -275,6 +281,8 @@ export interface Incident {
   resolution: string
   resolved_by: string
   replay: Replay | null
+  /** The latest repair rule created to fix this incident. */
+  repair_rule: { id: string; name: string; enabled: boolean; applied_count: number } | null
 }
 
 export interface Replay {
@@ -334,4 +342,77 @@ export interface AlertLogEntry {
   last_error: string
   created_at: string
   sent_at: string | null
+}
+
+export type RepairOpKind = 'convert' | 'rename' | 'set' | 'default' | 'remove' | 'map'
+export type RepairType = 'string' | 'number' | 'integer' | 'boolean'
+
+/** One change in a repair rule. Paths use the contract notation: "payload.amount", "items[].price". */
+export interface RepairOp {
+  op: RepairOpKind
+  path?: string
+  type?: RepairType
+  from?: string
+  to?: string
+  value?: unknown
+  values?: Record<string, unknown>
+}
+
+export interface RepairRule {
+  id: string
+  webhook_id: string
+  webhook_name: string
+  /** "" means every event type. */
+  event_type: string
+  name: string
+  ops: RepairOp[]
+  enabled: boolean
+  position: number
+  incident_id: string | null
+  applied_count: number
+  last_applied_at: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface RepairFinding {
+  severity: 'suspicious' | 'breaking'
+  kind: string
+  path: string
+  expected: string
+  actual: string
+}
+
+export interface RepairContractResult {
+  /** "none" when the event type has no active contract. */
+  status: 'none' | 'ok' | 'compatible' | 'suspicious' | 'breaking'
+  findings: RepairFinding[]
+}
+
+export interface RepairPreview {
+  event_id: string
+  event_type: string
+  before: unknown
+  after: unknown
+  is_json: boolean
+  changed: boolean
+  /** How many values each change touched in this event. */
+  op_changes: number[]
+  /** Other enabled rules that also changed this event. */
+  other_rules: string[]
+  contract: { before: RepairContractResult; after: RepairContractResult }
+  applies_to_all: boolean
+}
+
+export interface RepairSuggestion {
+  webhook_id: string
+  event_type: string
+  incident_id: string
+  sample_event_id: string | null
+  name: string
+  ops: RepairOp[]
+  explanation: string
+  /** The suggested value is a placeholder the user should confirm. */
+  needs_value: boolean
 }

@@ -102,6 +102,7 @@ function Health({ c }: { c: Contract }) {
   if (c.open_incidents) parts.push(<span key="i" className="font-medium text-red-700 dark:text-red-400">{c.open_incidents} open incident{c.open_incidents > 1 ? 's' : ''}</span>)
   if (c.breaking_24h) parts.push(<span key="b" className="text-red-700 dark:text-red-400">{c.breaking_24h} breaking</span>)
   if (c.suspicious_24h) parts.push(<span key="s" className="text-amber-700 dark:text-amber-400">{c.suspicious_24h} warnings</span>)
+  if (c.repaired_24h) parts.push(<span key="r" className="text-violet-700 dark:text-violet-400">{c.repaired_24h} repaired</span>)
   if (c.new_fields) parts.push(<span key="n" className="text-sky-700 dark:text-sky-400">{c.new_fields} new fields</span>)
   if (parts.length === 0) return <span className="text-emerald-700 dark:text-emerald-400">all events match</span>
   return <span className="inline-flex flex-wrap gap-x-2">{parts}</span>

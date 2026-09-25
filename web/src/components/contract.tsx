@@ -6,6 +6,7 @@ import {
   PlusCircleIcon,
   ShieldAlertIcon,
   TriangleAlertIcon,
+  WrenchIcon,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -39,6 +40,7 @@ const eventStatus: Record<EventContractStatus, { label: string; icon: LucideIcon
   compatible: { label: 'new fields', icon: PlusCircleIcon, cls: 'text-sky-700 dark:text-sky-400' },
   suspicious: { label: 'warning', icon: TriangleAlertIcon, cls: 'text-amber-700 dark:text-amber-400' },
   breaking: { label: 'breaking', icon: ShieldAlertIcon, cls: 'text-red-700 dark:text-red-400' },
+  repaired: { label: 'repaired', icon: WrenchIcon, cls: 'text-violet-700 dark:text-violet-400' },
 }
 
 /** An event's contract check result, compact. Renders a dash when not checked. */
