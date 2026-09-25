@@ -26,6 +26,7 @@ const pages = {
   contracts: () => import('@/pages/contracts'),
   contractDetail: () => import('@/pages/contract-detail'),
   incidents: () => import('@/pages/incidents'),
+  alerts: () => import('@/pages/alerts'),
 }
 const LandingPage = lazy(() => pages.landing().then((m) => ({ default: m.LandingPage })))
 const OverviewPage = lazy(() => pages.overview().then((m) => ({ default: m.OverviewPage })))
@@ -35,6 +36,7 @@ const WebhookDetailPage = lazy(() => pages.webhookDetail().then((m) => ({ defaul
 const ProjectsPage = lazy(() => pages.projects().then((m) => ({ default: m.ProjectsPage })))
 const MembersPage = lazy(() => pages.settings().then((m) => ({ default: m.MembersPage })))
 const ApiKeysPage = lazy(() => pages.settings().then((m) => ({ default: m.ApiKeysPage })))
+const AlertsPage = lazy(() => pages.alerts().then((m) => ({ default: m.AlertsPage })))
 const AuditPage = lazy(() => pages.settings().then((m) => ({ default: m.AuditPage })))
 const ContractsPage = lazy(() => pages.contracts().then((m) => ({ default: m.ContractsPage })))
 const ContractDetailPage = lazy(() => pages.contractDetail().then((m) => ({ default: m.ContractDetailPage })))
@@ -97,6 +99,7 @@ function SignedIn() {
         <Route path="incidents" element={<IncidentsPage />} />
         <Route path="settings/members" element={<MembersPage />} />
         <Route path="settings/api-keys" element={<AdminOnly><ApiKeysPage /></AdminOnly>} />
+        <Route path="settings/alerts" element={<AlertsPage />} />
         <Route path="settings/audit" element={<AdminOnly><AuditPage /></AdminOnly>} />
         <Route path="*" element={<Navigate to="/overview" replace />} />
       </Route>

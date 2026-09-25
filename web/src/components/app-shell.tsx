@@ -1,5 +1,6 @@
 import {
   ActivityIcon,
+  BellIcon,
   FolderIcon,
   KeyRoundIcon,
   LayoutDashboardIcon,
@@ -39,6 +40,7 @@ const nav = [
 
 const settingsNav = [
   { to: '/settings/members', label: 'Members', icon: UsersIcon },
+  { to: '/settings/alerts', label: 'Alerts', icon: BellIcon },
   { to: '/settings/api-keys', label: 'API keys', icon: KeyRoundIcon, minRole: 'admin' },
   { to: '/settings/audit', label: 'Audit log', icon: ScrollTextIcon, minRole: 'admin' },
 ]

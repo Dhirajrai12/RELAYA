@@ -301,3 +301,37 @@ export interface ReplayPlan {
     in_flight: number
   }[]
 }
+
+export type AlertKind = 'incident_opened' | 'incident_resolved' | 'destination_failing' | 'destination_recovered' | 'signature_failures'
+export type AlertChannelType = 'slack' | 'email' | 'webhook'
+
+export interface AlertChannel {
+  id: string
+  type: AlertChannelType
+  name: string
+  target: string
+  events: AlertKind[]
+  enabled: boolean
+  created_at: string
+  sent_7d: number
+  failed_7d: number
+}
+
+export interface AlertSettings {
+  kinds: AlertKind[]
+  email_enabled: boolean
+}
+
+export interface AlertLogEntry {
+  id: number
+  channel_id: string
+  channel_name: string
+  channel_type: AlertChannelType
+  kind: AlertKind | 'test'
+  title: string
+  status: 'pending' | 'sent' | 'failed'
+  attempts: number
+  last_error: string
+  created_at: string
+  sent_at: string | null
+}

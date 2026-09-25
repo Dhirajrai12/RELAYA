@@ -4,6 +4,9 @@ import { del, get, patch, post } from './api'
 import { useAuth } from './auth'
 import { useLiveInterval } from './realtime'
 import type {
+  AlertChannel,
+  AlertLogEntry,
+  AlertSettings,
   ApiKey,
   AuditEntry,
   EventDetail,
@@ -523,3 +526,86 @@ export function useRetryDelivery() {
   })
 }
 
+
+// ---- alerts -------------------------------------------------------------------------
+
+export function useAlertSettings() {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['alert-settings', orgId],
+    queryFn: () => get<AlertSettings>(orgPath(orgId, '/alert-settings')),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useAlertChannels() {
+  const orgId = useOrgId()
+  const interval = useLiveInterval(30_000)
+  return useQuery({
+    queryKey: ['alert-channels', orgId],
+    queryFn: () => get<List<AlertChannel>>(orgPath(orgId, '/alert-channels')),
+    refetchInterval: interval,
+  })
+}
+
+export function useAlertLog() {
+  const orgId = useOrgId()
+  const interval = useLiveInterval(15_000)
+  return useQuery({
+    queryKey: ['alerts', orgId],
+    queryFn: () => get<List<AlertLogEntry>>(orgPath(orgId, '/alerts')),
+    refetchInterval: interval,
+  })
+}
+
+export interface AlertChannelInput {
+  type: AlertChannel['type']
+  name: string
+  url?: string
+  email?: string
+  events: AlertChannel['events']
+}
+
+export function useCreateAlertChannel() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: AlertChannelInput) =>
+      post<{ channel: AlertChannel; signing_secret?: string }>(orgPath(orgId, '/alert-channels'), v),
+    onSuccess: (r) => upsertInList(qc, ['alert-channels', orgId], r.channel),
+  })
+}
+
+export function useUpdateAlertChannel() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...v }: { id: string; name?: string; events?: AlertChannel['events']; enabled?: boolean }) =>
+      patch<AlertChannel>(orgPath(orgId, `/alert-channels/${id}`), v),
+    onSuccess: (c) => upsertInList(qc, ['alert-channels', orgId], c),
+  })
+}
+
+export function useDeleteAlertChannel() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => del(orgPath(orgId, `/alert-channels/${id}`)),
+    onSuccess: (_, id) => {
+      removeFromList(qc, ['alert-channels', orgId], id)
+      qc.invalidateQueries({ queryKey: ['alerts', orgId] })
+    },
+  })
+}
+
+export function useTestAlertChannel() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => post<{ ok: boolean; error: string }>(orgPath(orgId, `/alert-channels/${id}/test`)),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['alerts', orgId] })
+      qc.invalidateQueries({ queryKey: ['alert-channels', orgId] })
+    },
+  })
+}

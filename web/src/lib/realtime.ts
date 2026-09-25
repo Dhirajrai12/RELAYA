@@ -66,6 +66,8 @@ function keysFor(orgId: string, m: Message): QueryKey[] {
         contract: [['contracts', orgId], ['contract', orgId], ['incidents', orgId], ['event-stats', orgId]],
         incident: [['incidents', orgId], ['contracts', orgId], ['contract', orgId], ['event-stats', orgId]],
         replay: [['incidents', orgId], ['event-stats', orgId], ['events', orgId]],
+        alert_channel: [['alert-channels', orgId], ['alerts', orgId]],
+        alert: [['alerts', orgId], ['alert-channels', orgId]],
       }
       return keys.concat(map[area] ?? [])
     }
