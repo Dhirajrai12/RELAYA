@@ -566,6 +566,7 @@ function Pricing() {
   const plans = [
     { name: 'Team', price: '₹14,999', per: '/ month', blurb: 'For teams with integrations in production.', items: ['500 connections', '1M events / month', '30-day history', 'Contracts, incidents & replay', 'Roles, API keys, audit log'], cta: 'Start free trial', highlight: true },
     { name: 'Business', price: '₹49,999', per: '/ month', blurb: 'For integrations that move money or customer data.', items: ['5,000 connections', '10M events / month', 'Impact analysis', 'Dry-run & verify', 'Audit export'], cta: 'Start with a trial', highlight: false },
+    { name: 'Enterprise', price: '₹2 lakh+', per: '/ month', blurb: 'For large teams with security and compliance needs.', items: ['Custom connection & event limits', 'SSO and SCIM', 'Self-hosted option', 'Uptime SLA', '1 custom connector every quarter'], cta: 'Start with a trial', highlight: false },
   ]
   return (
     <Section
@@ -609,36 +610,12 @@ function Pricing() {
             </SpotlightCard>
           </Reveal>
         ))}
-        <Reveal delay={240}>
-          <SpotlightCard className="p-6 md:p-8">
-            <div className="flex h-full flex-col">
-              <h3 className="font-semibold text-l-text">How the {TRIAL_DAYS}-day trial works</h3>
-              <ol className="mt-6 space-y-5 text-sm">
-                {[
-                  ['Sign up and add a card', 'You get the full Team plan straight away.'],
-                  [`Use it for ${TRIAL_DAYS} days`, 'Connect real webhooks and see real traffic.'],
-                  ['Pay only if you stay', `Your card is charged when the trial ends. Cancel before day ${TRIAL_DAYS} and you pay nothing.`],
-                ].map(([title, body], i) => (
-                  <li key={title} className="flex gap-3">
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-[#14b886]/40 font-mono text-[11px] text-l-accent">
-                      {i + 1}
-                    </span>
-                    <div>
-                      <div className="font-medium text-l-text">{title}</div>
-                      <div className="mt-0.5">{body}</div>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-              <div className="mt-auto pt-6 text-xs text-l-subtle">Switch to Business at any time, during or after the trial.</div>
-            </div>
-          </SpotlightCard>
-        </Reveal>
       </div>
       <Reveal>
-        <p className="mt-8 text-center text-sm text-l-subtle">
-          Plans include features as they launch; items marked Coming soon above are on the way. Enterprise: SSO,
-          self-hosting, SLAs and a custom connector every quarter, from ₹2 lakh / month. Custom connectors from ₹50k one-time.
+        <p className="mx-auto mt-8 max-w-3xl text-center text-sm text-l-subtle">
+          {TRIAL_DAYS}-day free trial of the Team plan, card required. You're charged when the trial ends; cancel before
+          then and you pay nothing. Plans include features as they launch; items marked Coming soon are on the way.
+          Custom connectors from ₹50k one-time.
         </p>
       </Reveal>
     </Section>
