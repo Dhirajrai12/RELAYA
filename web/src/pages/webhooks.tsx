@@ -14,11 +14,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { errorMessage } from '@/lib/api'
 import { providerLabel, timeAgo } from '@/lib/format'
-import { useCreateWebhook, useProjects, useProviders, useWebhooks } from '@/lib/queries'
+import { useCreateWebhook, usePrefetchWebhook, useProjects, useProviders, useWebhooks } from '@/lib/queries'
 import { useCanManage } from '@/lib/role'
 
 export function WebhooksPage() {
   const webhooks = useWebhooks()
+  const prefetch = usePrefetchWebhook()
   const projects = useProjects()
   const canManage = useCanManage()
   const [open, setOpen] = useState(false)
@@ -52,7 +53,7 @@ export function WebhooksPage() {
         <ul className="divide-y rounded-lg border md:hidden">
           {webhooks.data.data.map((w) => (
             <li key={w.id}>
-              <Link to={`/webhooks/${w.id}`} className="flex items-center gap-3 px-3 py-3 active:bg-muted">
+              <Link to={`/webhooks/${w.id}`} onMouseEnter={() => prefetch(w.id)} onFocus={() => prefetch(w.id)} className="flex items-center gap-3 px-3 py-3 active:bg-muted">
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{w.name}</div>
                   <div className="truncate text-xs text-muted-foreground">
@@ -80,7 +81,7 @@ export function WebhooksPage() {
               {webhooks.data.data.map((w) => (
                 <TableRow key={w.id}>
                   <TableCell>
-                    <Link to={`/webhooks/${w.id}`} className="font-medium hover:underline">
+                    <Link to={`/webhooks/${w.id}`} onMouseEnter={() => prefetch(w.id)} onFocus={() => prefetch(w.id)} className="font-medium hover:underline">
                       {w.name}
                     </Link>
                   </TableCell>

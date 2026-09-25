@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { errorMessage } from '@/lib/api'
 import { providerLabel, timeAgo } from '@/lib/format'
+import { DestinationsCard } from '@/components/destinations-card'
 import { useDeleteWebhook, useEvents, useRotateWebhookURL, useUpdateWebhook, useWebhook } from '@/lib/queries'
 import { useCanManage } from '@/lib/role'
 import type { Webhook } from '@/lib/types'
@@ -98,6 +99,8 @@ function WebhookView({ w }: { w: Webhook }) {
           </CardContent>
         </Card>
 
+        <DestinationsCard webhookId={w.id} />
+
         <RecentEvents webhookId={w.id} />
 
         {canManage && (
@@ -148,7 +151,7 @@ function WebhookView({ w }: { w: Webhook }) {
 }
 
 function RecentEvents({ webhookId }: { webhookId: string }) {
-  const events = useEvents({ webhook_id: webhookId }, true)
+  const events = useEvents({ webhook_id: webhookId })
   const rows = events.data?.pages[0]?.data.slice(0, 8) ?? []
   return (
     <Card>

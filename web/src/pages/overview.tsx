@@ -6,7 +6,7 @@ import {
   CircleIcon,
   ClockIcon,
   ShieldAlertIcon,
-  WebhookIcon,
+  SendIcon,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { compact, providerLabel, timeAgo } from '@/lib/format'
-import { useEventStats, useProjects, useWebhooks } from '@/lib/queries'
+import { useEventStats, usePrefetchWebhook, useProjects, useWebhooks } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 import type { Webhook, WebhookHealth } from '@/lib/types'
 
@@ -52,10 +52,16 @@ export function OverviewPage() {
           sub={total ? `${((s.totals.rejected / total) * 100).toFixed(1)}% of deliveries` : 'No deliveries yet'}
         />
         <StatTile
-          label="Webhooks"
-          value={hooks.length}
-          icon={WebhookIcon}
-          sub={failing ? `${failing} with signature failures` : hooks.length ? 'No failures' : 'None yet'}
+          label="Forwarded (24h)"
+          value={compact(s.forwarded.succeeded)}
+          icon={SendIcon}
+          sub={
+            s.forwarded.failed || s.forwarded.in_progress
+              ? `${s.forwarded.failed} failed · ${s.forwarded.in_progress} in progress`
+              : failing
+                ? `${failing} webhook${failing > 1 ? 's' : ''} with signature failures`
+                : 'No failed deliveries'
+          }
         />
         <StatTile label="Last delivery" value={lastAt ? timeAgo(lastAt) : '—'} icon={ClockIcon} sub={lastAt ? new Date(lastAt).toLocaleString() : 'Waiting for the first one'} />
       </div>
@@ -104,10 +110,11 @@ function healthOf(h?: WebhookHealth): Health {
 
 function HealthRow({ w, h }: { w: Webhook; h?: WebhookHealth }) {
   const health = healthOf(h)
+  const prefetch = usePrefetchWebhook()
   const Icon = health.icon
   return (
     <li>
-      <Link to={`/webhooks/${w.id}`} className="flex items-center gap-3 rounded-md px-2 py-2.5 hover:bg-muted/60">
+      <Link to={`/webhooks/${w.id}`} onMouseEnter={() => prefetch(w.id)} onFocus={() => prefetch(w.id)} className="flex items-center gap-3 rounded-md px-2 py-2.5 hover:bg-muted/60">
         <Icon className={cn('size-4 shrink-0', health.tone)} aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{w.name}</div>

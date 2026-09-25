@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type SubmitEvent } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, type SubmitEvent } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { AppShell } from '@/components/app-shell'
@@ -11,29 +11,58 @@ import { useAuth } from '@/lib/auth'
 import { useCreateOrg, useMe } from '@/lib/queries'
 import { useHasRole } from '@/lib/role'
 import { LoginPage, SignupPage } from '@/pages/auth'
-import { LandingPage } from '@/pages/landing/landing'
-import { EventsPage } from '@/pages/events'
-import { OverviewPage } from '@/pages/overview'
-import { ProjectsPage } from '@/pages/projects'
-import { ApiKeysPage, AuditPage, MembersPage } from '@/pages/settings'
-import { WebhookDetailPage } from '@/pages/webhook-detail'
-import { WebhooksPage } from '@/pages/webhooks'
+
+// Each area is its own chunk: visitors to the landing page don't download the
+// dashboard, and the dashboard doesn't download the landing page or charts
+// until they're needed.
+const pages = {
+  landing: () => import('@/pages/landing/landing'),
+  overview: () => import('@/pages/overview'),
+  events: () => import('@/pages/events'),
+  webhooks: () => import('@/pages/webhooks'),
+  webhookDetail: () => import('@/pages/webhook-detail'),
+  projects: () => import('@/pages/projects'),
+  settings: () => import('@/pages/settings'),
+}
+const LandingPage = lazy(() => pages.landing().then((m) => ({ default: m.LandingPage })))
+const OverviewPage = lazy(() => pages.overview().then((m) => ({ default: m.OverviewPage })))
+const EventsPage = lazy(() => pages.events().then((m) => ({ default: m.EventsPage })))
+const WebhooksPage = lazy(() => pages.webhooks().then((m) => ({ default: m.WebhooksPage })))
+const WebhookDetailPage = lazy(() => pages.webhookDetail().then((m) => ({ default: m.WebhookDetailPage })))
+const ProjectsPage = lazy(() => pages.projects().then((m) => ({ default: m.ProjectsPage })))
+const MembersPage = lazy(() => pages.settings().then((m) => ({ default: m.MembersPage })))
+const ApiKeysPage = lazy(() => pages.settings().then((m) => ({ default: m.ApiKeysPage })))
+const AuditPage = lazy(() => pages.settings().then((m) => ({ default: m.AuditPage })))
+
+/** Once signed in and idle, fetch the other dashboard pages so navigating never waits. */
+function usePreloadDashboard() {
+  useEffect(() => {
+    const run = () => {
+      for (const [name, load] of Object.entries(pages)) if (name !== 'landing') void load()
+    }
+    const id = setTimeout(run, 1200) // after the first page has rendered
+    return () => clearTimeout(id)
+  }, [])
+}
 
 export default function App() {
   const token = useAuth((s) => s.token)
   return (
-    <Routes>
-      <Route path="/login" element={token ? <Navigate to="/overview" replace /> : <LoginPage />} />
-      <Route path="/signup" element={token ? <Navigate to="/overview" replace /> : <SignupPage />} />
-      {/* Signed-out visitors land on the marketing page; signed-in users go to the app. */}
-      <Route path="/" element={token ? <Navigate to="/overview" replace /> : <LandingPage />} />
-      <Route path="/*" element={token ? <SignedIn /> : <Navigate to="/login" replace />} />
-    </Routes>
+    <Suspense fallback={<div className="min-h-svh" />}>
+      <Routes>
+        <Route path="/login" element={token ? <Navigate to="/overview" replace /> : <LoginPage />} />
+        <Route path="/signup" element={token ? <Navigate to="/overview" replace /> : <SignupPage />} />
+        {/* Signed-out visitors land on the marketing page; signed-in users go to the app. */}
+        <Route path="/" element={token ? <Navigate to="/overview" replace /> : <LandingPage />} />
+        <Route path="/*" element={token ? <SignedIn /> : <Navigate to="/login" replace />} />
+      </Routes>
+    </Suspense>
   )
 }
 
 /** Loads the user's orgs and makes sure a valid one is selected before rendering pages. */
 function SignedIn() {
+  usePreloadDashboard()
   const me = useMe()
   const { orgId, setOrg } = useAuth()
   const orgs = useMemo(() => me.data?.orgs ?? [], [me.data])

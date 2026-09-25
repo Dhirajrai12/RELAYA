@@ -67,9 +67,12 @@ export interface EventSummary {
   content_type: string
   payload_size: number
   received_at: string
+  /** Forwarding state across destinations. */
+  delivery: EventDeliveryState
 }
 
 export interface EventDetail extends EventSummary {
+  deliveries: Delivery[]
   headers: Record<string, string>
   source_ip: string | null
   payload_json?: unknown
@@ -125,4 +128,63 @@ export interface EventStats {
   hours: HourBucket[]
   totals: { received: number; rejected: number }
   webhooks: WebhookHealth[]
+  forwarded: { succeeded: number; failed: number; in_progress: number }
+}
+
+export type EventDeliveryState = 'none' | 'pending' | 'delivered' | 'failed'
+export type DeliveryStatus = 'pending' | 'in_flight' | 'retrying' | 'succeeded' | 'failed'
+
+export interface Destination {
+  id: string
+  webhook_id: string
+  name: string
+  url: string
+  enabled: boolean
+  timeout_ms: number
+  max_attempts: number
+  created_at: string
+  updated_at: string
+  stats: {
+    succeeded_24h: number
+    failed_24h: number
+    retrying: number
+    pending: number
+    last_success_at: string | null
+  }
+}
+
+export interface Delivery {
+  id: string
+  event_id: string
+  webhook_id: string
+  destination_id: string
+  destination_name: string
+  destination_url: string
+  status: DeliveryStatus
+  attempts: number
+  max_attempts: number
+  next_attempt_at: string | null
+  last_status_code: number | null
+  last_error: string
+  last_attempt_at: string | null
+  completed_at: string | null
+  created_at: string
+}
+
+export interface DeliveryAttempt {
+  attempt: number
+  started_at: string
+  duration_ms: number
+  status_code: number | null
+  error: string
+  response_body: string
+  outcome: 'succeeded' | 'retry' | 'failed'
+}
+
+export interface TestDeliveryResult {
+  ok: boolean
+  status_code: number
+  duration_ms: number
+  response_body: string
+  error: string
 }

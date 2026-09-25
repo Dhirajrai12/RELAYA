@@ -1,8 +1,10 @@
-import { PauseIcon, PlayIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
+import { SearchIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { CopyButton, EmptyState, ErrorState, PageHeader, SignatureLabel, StatusBadge } from '@/components/common'
+import { EventDeliveries, EventDeliveryState } from '@/components/delivery'
+import { LiveIndicator } from '@/components/live-indicator'
 import { SimpleSelect } from '@/components/simple-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,7 +21,6 @@ const FILTER_KEYS = ['webhook_id', 'status', 'signature', 'type', 'dedup_key'] a
 
 export function EventsPage() {
   const [params, setParams] = useSearchParams()
-  const [live, setLive] = useState(true)
   const [search, setSearch] = useState(params.get('dedup_key') ?? '')
   const selected = params.get('event')
 
@@ -38,7 +39,7 @@ export function EventsPage() {
   const [showFilters, setShowFilters] = useState(hasFilters)
 
   const webhooks = useWebhooks()
-  const events = useEvents(filters, live)
+  const events = useEvents(filters)
   const rows = events.data?.pages.flatMap((p) => p.data) ?? []
   const webhookName = (id: string) => webhooks.data?.data.find((w) => w.id === id)?.name ?? '—'
 
@@ -47,13 +48,7 @@ export function EventsPage() {
       <PageHeader
         title="Events"
         description="Every webhook delivery received by the gateway, newest first."
-        actions={
-          <Button variant="outline" size="sm" onClick={() => setLive(!live)}>
-            {live ? <PauseIcon /> : <PlayIcon />}
-            {live ? 'Live' : 'Paused'}
-            {live && <span className="size-2 animate-pulse rounded-full bg-emerald-500" />}
-          </Button>
-        }
+        actions={<LiveIndicator />}
       />
 
       <div className="mb-3 flex items-center gap-2 sm:hidden">
@@ -161,7 +156,8 @@ export function EventsPage() {
                   <TableHead>Webhook</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Signature</TableHead>
-                  <TableHead>Event ID</TableHead>
+                  <TableHead>Forwarded</TableHead>
+                  <TableHead className="hidden xl:table-cell">Event ID</TableHead>
                   <TableHead className="text-right">Size</TableHead>
                   <TableHead className="text-right">Received</TableHead>
                 </TableRow>
@@ -182,7 +178,10 @@ export function EventsPage() {
                     <TableCell>
                       <SignatureLabel value={e.signature} />
                     </TableCell>
-                    <TableCell className="max-w-48 truncate font-mono text-xs text-muted-foreground">{e.dedup_key}</TableCell>
+                    <TableCell>
+                      <EventDeliveryState state={e.delivery} />
+                    </TableCell>
+                    <TableCell className="hidden max-w-48 truncate font-mono text-xs text-muted-foreground xl:table-cell">{e.dedup_key}</TableCell>
                     <TableCell className="text-right text-xs text-muted-foreground">{bytes(e.payload_size)}</TableCell>
                     <TableCell className="text-right text-xs text-muted-foreground" title={dateTime(e.received_at)}>
                       {timeAgo(e.received_at)}
@@ -220,6 +219,11 @@ function EventCard({ e, webhookName, onOpen }: { e: EventSummary; webhookName: (
           <SignatureLabel value={e.signature} />
           <span className="min-w-0 truncate text-muted-foreground">· {webhookName(e.webhook_id)}</span>
         </div>
+        {e.delivery !== 'none' && (
+          <div className="mt-1">
+            <EventDeliveryState state={e.delivery} />
+          </div>
+        )}
       </button>
     </li>
   )
@@ -277,6 +281,11 @@ function EventBody({ e }: { e: EventDetail }) {
           {bytes(e.payload_size)} · {e.content_type || 'no content type'}
         </dd>
       </dl>
+
+      <section>
+        <h3 className="mb-2 text-sm font-medium">Forwarding</h3>
+        <EventDeliveries deliveries={e.deliveries} />
+      </section>
 
       <section>
         <div className="mb-2 flex items-center justify-between">

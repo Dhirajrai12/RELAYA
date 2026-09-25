@@ -9,10 +9,11 @@ import {
   UsersIcon,
   WebhookIcon,
 } from 'lucide-react'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 
+import { LiveIndicator } from '@/components/live-indicator'
 import { Logo, LogoMark } from '@/components/logo'
 import { SimpleSelect } from '@/components/simple-select'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -20,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { post } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useRealtime } from '@/lib/realtime'
 import { cn } from '@/lib/utils'
 import type { Org } from '@/lib/types'
 
@@ -70,7 +72,8 @@ function SidebarContent({ orgs, onNavigate }: { orgs: Org[]; onNavigate?: () => 
 
   return (
     <div className="flex h-full flex-col p-3">
-      <Logo className="px-2 pb-5 pt-1" />
+      <Logo className="px-2 pb-2 pt-1" />
+      <LiveIndicator className="mb-4 px-2" />
 
       {orgs.length > 1 ? (
         <SimpleSelect
@@ -127,6 +130,8 @@ function SidebarContent({ orgs, onNavigate }: { orgs: Org[]; onNavigate?: () => 
 
 export function AppShell({ orgs }: { orgs: Org[] }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const orgId = useAuth((s) => s.orgId)
+  useRealtime(orgId) // one live connection for the whole app
   return (
     <div className="min-h-svh md:flex">
       {/* Desktop: fixed sidebar */}
@@ -141,6 +146,7 @@ export function AppShell({ orgs }: { orgs: Org[] }) {
         </Button>
         <LogoMark className="size-7" />
         <span className="text-sm font-semibold tracking-[0.18em]">RELAYA</span>
+        <LiveIndicator className="ml-auto" />
       </header>
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
         <SheetContent side="left" className="w-72 p-0 data-[side=left]:w-72">
@@ -151,9 +157,21 @@ export function AppShell({ orgs }: { orgs: Org[] }) {
 
       <main className="min-w-0 flex-1 px-4 py-5 md:px-8 md:py-7">
         <div className="mx-auto max-w-7xl">
-          <Outlet />
+          {/* Page chunks load behind the shell, which stays visible. */}
+          <Suspense fallback={<PageFallback />}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
+    </div>
+  )
+}
+
+function PageFallback() {
+  return (
+    <div className="space-y-4" aria-busy="true">
+      <div className="h-8 w-48 animate-pulse rounded-md bg-muted" />
+      <div className="h-40 animate-pulse rounded-xl bg-muted" />
     </div>
   )
 }

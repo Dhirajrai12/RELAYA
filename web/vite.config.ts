@@ -20,6 +20,7 @@ export default defineConfig({
         target,
         changeOrigin: true,
         secure: true,
+        ws: true, // realtime WebSocket
         rewrite: isLocal ? (p) => p.replace(/^\/api/, '') : undefined,
       },
     },
