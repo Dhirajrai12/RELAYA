@@ -1,0 +1,159 @@
+import {
+  ActivityIcon,
+  FolderIcon,
+  KeyRoundIcon,
+  LayoutDashboardIcon,
+  LogOutIcon,
+  MenuIcon,
+  ScrollTextIcon,
+  UsersIcon,
+  WebhookIcon,
+} from 'lucide-react'
+import { useState } from 'react'
+import { NavLink, Outlet } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+
+import { Logo, LogoMark } from '@/components/logo'
+import { SimpleSelect } from '@/components/simple-select'
+import { ThemeToggle } from '@/components/theme-toggle'
+import { Button } from '@/components/ui/button'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
+import { post } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
+import { cn } from '@/lib/utils'
+import type { Org } from '@/lib/types'
+
+const nav = [
+  { to: '/overview', label: 'Overview', icon: LayoutDashboardIcon },
+  { to: '/events', label: 'Events', icon: ActivityIcon },
+  { to: '/webhooks', label: 'Webhooks', icon: WebhookIcon },
+  { to: '/projects', label: 'Projects', icon: FolderIcon },
+]
+
+const settingsNav = [
+  { to: '/settings/members', label: 'Members', icon: UsersIcon },
+  { to: '/settings/api-keys', label: 'API keys', icon: KeyRoundIcon, minRole: 'admin' },
+  { to: '/settings/audit', label: 'Audit log', icon: ScrollTextIcon, minRole: 'admin' },
+]
+
+function NavItem({ to, label, icon: Icon, onNavigate }: { to: string; label: string; icon: typeof ActivityIcon; onNavigate?: () => void }) {
+  return (
+    <NavLink
+      to={to}
+      onClick={onNavigate}
+      className={({ isActive }) =>
+        cn(
+          'relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+          isActive &&
+            'bg-muted font-medium text-foreground before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-brand',
+        )
+      }
+    >
+      <Icon className="size-4" />
+      {label}
+    </NavLink>
+  )
+}
+
+/** Everything inside the sidebar; shared by the desktop rail and the mobile drawer. */
+function SidebarContent({ orgs, onNavigate }: { orgs: Org[]; onNavigate?: () => void }) {
+  const { user, orgId, setOrg, signOut } = useAuth()
+  const qc = useQueryClient()
+  const org = orgs.find((o) => o.id === orgId)
+  const isAdmin = org?.role === 'owner' || org?.role === 'admin'
+
+  async function logout() {
+    await post('/auth/logout').catch(() => {}) // session may already be gone
+    signOut()
+    qc.clear()
+  }
+
+  return (
+    <div className="flex h-full flex-col p-3">
+      <Logo className="px-2 pb-5 pt-1" />
+
+      {orgs.length > 1 ? (
+        <SimpleSelect
+          className="mb-4 w-full"
+          value={orgId ?? ''}
+          onChange={(v) => {
+            setOrg(v)
+            qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'me' })
+          }}
+          options={orgs.map((o) => ({ value: o.id, label: o.name }))}
+        />
+      ) : (
+        <div className="mb-4 truncate rounded-md border bg-background px-3 py-2 text-sm font-medium">{org?.name}</div>
+      )}
+
+      <nav className="flex flex-col gap-0.5">
+        {nav.map((n) => (
+          <NavItem key={n.to} {...n} onNavigate={onNavigate} />
+        ))}
+      </nav>
+
+      <div className="mt-6 px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Settings</div>
+      <nav className="flex flex-col gap-0.5">
+        {settingsNav
+          .filter((n) => !n.minRole || isAdmin)
+          .map((n) => (
+            <NavItem key={n.to} {...n} onNavigate={onNavigate} />
+          ))}
+      </nav>
+
+      <div className="mt-auto space-y-3 border-t pt-3">
+        <div className="flex items-center gap-2.5 px-1">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-sm font-semibold text-brand-foreground dark:text-brand">
+            {(user?.name || user?.email || '?').charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">{user?.name || user?.email}</div>
+            <div className="truncate text-xs text-muted-foreground">
+              {user?.email} · {org?.role}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 px-1">
+          <ThemeToggle />
+          <Button variant="ghost" size="sm" onClick={logout}>
+            <LogOutIcon />
+            Sign out
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function AppShell({ orgs }: { orgs: Org[] }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  return (
+    <div className="min-h-svh md:flex">
+      {/* Desktop: fixed sidebar */}
+      <aside className="sticky top-0 hidden h-svh w-64 shrink-0 border-r bg-sidebar md:block">
+        <SidebarContent orgs={orgs} />
+      </aside>
+
+      {/* Mobile: top bar + drawer */}
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur md:hidden">
+        <Button variant="ghost" size="icon" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
+          <MenuIcon />
+        </Button>
+        <LogoMark className="size-7" />
+        <span className="text-sm font-semibold tracking-[0.18em]">RELAYA</span>
+      </header>
+      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+        <SheetContent side="left" className="w-72 p-0 data-[side=left]:w-72">
+          <SheetTitle className="sr-only">Menu</SheetTitle>
+          <SidebarContent orgs={orgs} onNavigate={() => setMenuOpen(false)} />
+        </SheetContent>
+      </Sheet>
+
+      <main className="min-w-0 flex-1 px-4 py-5 md:px-8 md:py-7">
+        <div className="mx-auto max-w-7xl">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  )
+}

@@ -1,0 +1,12 @@
+# Production install lives in this same folder (C:\relaya == C:\Relaya on Windows).
+# Never commit any of it: it holds passwords, the master key and the live database.
+/bin/
+/site/
+/pgsql/
+/pgdata/
+/rollback/
+/secrets.txt
+.env
+
+# build output
+/backend/dist/

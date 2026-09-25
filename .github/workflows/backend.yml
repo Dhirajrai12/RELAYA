@@ -1,0 +1,38 @@
+name: backend
+
+on:
+  push:
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+  pull_request:
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: relaya
+          POSTGRES_PASSWORD: relaya
+          POSTGRES_DB: relaya_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U relaya" --health-interval 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://relaya:relaya@localhost:5432/relaya_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: docker build
+        run: docker build -t relaya-backend .
