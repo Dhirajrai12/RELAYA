@@ -5,6 +5,7 @@ package main
 
 import (
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"relaya/internal/delivery"
 	"relaya/internal/retention"
 	"relaya/internal/server"
+	"relaya/internal/status"
 	"relaya/internal/vault"
 )
 
@@ -59,6 +61,7 @@ func main() {
 	}
 	go alertSender.Run(ctx)
 	go retention.Run(ctx, pool, retention.Policy{Events: cfg.EventRetention, Alerts: cfg.AlertRetention}, time.Hour)
+	go (&status.Prober{Pool: pool, APIURL: status.LocalURL(cfg.APIAddr), IngestURL: status.LocalURL(cfg.IngestAddr), HTTP: &http.Client{Timeout: 5 * time.Second}}).Run(ctx)
 
 	slog.Info("worker started", "concurrency", cfg.WorkerConcurrency, "allow_http", policy.AllowHTTP, "allow_private", policy.AllowPrivate)
 	w.Run(ctx)

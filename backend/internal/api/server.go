@@ -21,6 +21,7 @@ import (
 	"relaya/internal/httpx"
 	"relaya/internal/ratelimit"
 	"relaya/internal/realtime"
+	"relaya/internal/status"
 	"relaya/internal/vault"
 )
 
@@ -44,6 +45,8 @@ type Server struct {
 	IncidentAutoResolveAfter time.Duration
 	// Sends test alerts synchronously; the worker sends the rest.
 	AlertSender *alerts.Sender
+	// Public status page data (nil = endpoint off).
+	Status *status.Service
 	// Rate limits; nil fields are unlimited (tests).
 	Limits            Limits
 	TrustProxyHeaders bool // for client IPs behind our own proxy
@@ -52,6 +55,7 @@ type Server struct {
 // Limits protects sign-in from password guessing and the API from floods.
 type Limits struct {
 	LoginIP    *ratelimit.Limiter // sign-in attempts per IP
+	StatusIP   *ratelimit.Limiter // public status requests per IP
 	LoginEmail *ratelimit.Limiter // failed sign-ins per account
 	SignupIP   *ratelimit.Limiter // sign-ups per IP
 	Caller     *ratelimit.Limiter // authenticated requests per user or API key
@@ -86,6 +90,7 @@ func (s *Server) Routes() http.Handler {
 		}
 		httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	public.Handle("GET /v1/status", httpx.HandlerFunc(s.publicStatus))
 	public.Handle("POST /v1/auth/signup", httpx.HandlerFunc(s.signup))
 	public.Handle("POST /v1/auth/login", httpx.HandlerFunc(s.login))
 	// Authenticates with its first message, so it sits outside the auth middleware.
@@ -233,4 +238,21 @@ func requireName(v, field string, max int) (string, error) {
 		return "", httpx.BadRequest("%s must be at most %d characters", field, max)
 	}
 	return v, nil
+}
+
+// publicStatus serves the status page: no login, cached, rate-limited per IP.
+func (s *Server) publicStatus(w http.ResponseWriter, r *http.Request) error {
+	if s.Status == nil {
+		return httpx.ErrNotFound
+	}
+	if ok, wait := s.Limits.StatusIP.Allow(httpx.ClientIP(r, s.TrustProxyHeaders)); !ok {
+		return httpx.TooManyRequests(w, wait, "too many requests; the status page refreshes itself")
+	}
+	p, err := s.Status.Page(r.Context())
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Cache-Control", "public, max-age=30")
+	httpx.JSON(w, http.StatusOK, p)
+	return nil
 }
