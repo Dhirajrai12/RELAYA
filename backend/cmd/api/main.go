@@ -3,8 +3,10 @@ package main
 
 import (
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"relaya/internal/alerts"
 	"relaya/internal/api"
@@ -13,6 +15,8 @@ import (
 	"relaya/internal/db"
 	"relaya/internal/delivery"
 	"relaya/internal/httpx"
+	"relaya/internal/metrics"
+	"relaya/internal/ratelimit"
 	"relaya/internal/realtime"
 	"relaya/internal/server"
 	"relaya/internal/vault"
@@ -54,12 +58,25 @@ func main() {
 	srv.StreamOrigins = streamOrigins(cfg)
 	srv.ContractMinSamples = cfg.ContractMinSamples
 	srv.IncidentAutoResolveAfter = cfg.IncidentAutoResolveAfter
+	srv.TrustProxyHeaders = cfg.TrustProxyHeaders
+	srv.Limits = api.Limits{
+		LoginIP:    ratelimit.New(20, time.Minute, 20),
+		LoginEmail: ratelimit.New(10, 15*time.Minute, 10), // failed attempts only
+		SignupIP:   ratelimit.New(10, time.Hour, 10),
+	}
+	if cfg.APIPerMinute > 0 {
+		srv.Limits.Caller = ratelimit.New(cfg.APIPerMinute, time.Minute, max(cfg.APIPerMinute/2, 10))
+	}
 	srv.AlertSender = &alerts.Sender{
 		Pool: pool, Vault: srv.Vault, HTTP: srv.DeliveryPolicy.Client(), Sign: delivery.Sign, DashboardURL: cfg.DashboardURL,
 		SMTP: alerts.SMTP{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.SMTPFrom},
 	}
 	go srv.Hub.Run(ctx)
-	h := httpx.Chain(srv.Routes(), httpx.Log, httpx.Recover, httpx.CORS(cfg.AllowedOrigins))
+	reg := metrics.NewRegistry("api")
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", metrics.Handler(cfg.MetricsToken, reg, metrics.DBCollector(pool)))
+	mux.Handle("/", srv.Routes())
+	h := httpx.Chain(mux, httpx.Log, reg.Middleware, httpx.Recover, httpx.CORS(cfg.AllowedOrigins))
 	if err := server.Run(ctx, "api", cfg.APIAddr, h); err != nil {
 		slog.Error("server", "err", err)
 		os.Exit(1)

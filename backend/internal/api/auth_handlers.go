@@ -39,6 +39,9 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
+	if ok, wait := s.Limits.SignupIP.Allow(httpx.ClientIP(r, s.TrustProxyHeaders)); !ok {
+		return httpx.TooManyRequests(w, wait, "too many sign-ups from this address; try again later")
+	}
 	addr, err := mail.ParseAddress(strings.TrimSpace(in.Email))
 	if err != nil || addr.Address != strings.TrimSpace(in.Email) {
 		return httpx.BadRequest("a valid email is required")
@@ -118,6 +121,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
+	// Per IP for floods; per account (failures only) for slow password guessing,
+	// so the real user isn't locked out by someone else's successful sign-ins.
+	if ok, wait := s.Limits.LoginIP.Allow(httpx.ClientIP(r, s.TrustProxyHeaders)); !ok {
+		return httpx.TooManyRequests(w, wait, "too many sign-in attempts; try again shortly")
+	}
+	account := strings.ToLower(strings.TrimSpace(in.Email))
+	if ok, wait := s.Limits.LoginEmail.Check(account); !ok {
+		return httpx.TooManyRequests(w, wait, "too many failed sign-ins for this account; try again later")
+	}
 	var u userView
 	var hash string
 	err := s.Pool.QueryRow(r.Context(),
@@ -127,6 +139,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !auth.CheckPasswordOrDummy(hash, err == nil, in.Password) {
+		s.Limits.LoginEmail.Take(account)
 		return httpx.NewError(http.StatusUnauthorized, "invalid_credentials", "email or password is incorrect")
 	}
 

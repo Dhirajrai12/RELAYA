@@ -19,6 +19,7 @@ import (
 	"relaya/internal/auth"
 	"relaya/internal/delivery"
 	"relaya/internal/httpx"
+	"relaya/internal/ratelimit"
 	"relaya/internal/realtime"
 	"relaya/internal/vault"
 )
@@ -43,6 +44,34 @@ type Server struct {
 	IncidentAutoResolveAfter time.Duration
 	// Sends test alerts synchronously; the worker sends the rest.
 	AlertSender *alerts.Sender
+	// Rate limits; nil fields are unlimited (tests).
+	Limits            Limits
+	TrustProxyHeaders bool // for client IPs behind our own proxy
+}
+
+// Limits protects sign-in from password guessing and the API from floods.
+type Limits struct {
+	LoginIP    *ratelimit.Limiter // sign-in attempts per IP
+	LoginEmail *ratelimit.Limiter // failed sign-ins per account
+	SignupIP   *ratelimit.Limiter // sign-ups per IP
+	Caller     *ratelimit.Limiter // authenticated requests per user or API key
+}
+
+// limitCaller rate-limits authenticated requests per user or API key.
+func (s *Server) limitCaller(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p, ok := auth.FromContext(r.Context()); ok {
+			key := "u:" + p.UserID
+			if p.APIKeyID != "" {
+				key = "k:" + p.APIKeyID
+			}
+			if ok, wait := s.Limits.Caller.Allow(key); !ok {
+				httpx.WriteError(w, r, httpx.TooManyRequests(w, wait, "too many requests; slow down and retry"))
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Routes() http.Handler {
@@ -134,7 +163,7 @@ func (s *Server) Routes() http.Handler {
 
 	h("GET /v1/orgs/{org}/audit-logs", s.listAuditLogs)
 
-	public.Handle("/", s.Auth.Middleware(private))
+	public.Handle("/", s.Auth.Middleware(s.limitCaller(private)))
 	return public
 }
 

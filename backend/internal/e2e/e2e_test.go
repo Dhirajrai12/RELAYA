@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"relaya/internal/alerts"
 	"relaya/internal/api"
 	"relaya/internal/auth"
@@ -39,9 +41,13 @@ type env struct {
 	worker  *delivery.Worker
 	checker *contract.Checker
 	alerts  *alerts.Sender
+	pool    *pgxpool.Pool
 }
 
-func setup(t *testing.T) *env {
+func setup(t *testing.T) *env { return setupWith(t, nil) }
+
+// setupWith lets a test configure the API server and ingest handler (e.g. rate limits).
+func setupWith(t *testing.T, configure func(*api.Server, *ingest.Handler)) *env {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL not set")
@@ -67,9 +73,8 @@ func setup(t *testing.T) *env {
 	rand.Read(key)
 	wrapper, _ := vault.NewLocalWrapper("test", key)
 
-	ing := httptest.NewServer(httpx.Chain((&ingest.Handler{
-		Pool: pool, Vault: vault.NewPGVault(pool, wrapper), MaxBodyBytes: 1 << 20,
-	}).Routes(), httpx.Recover))
+	ingHandler := &ingest.Handler{Pool: pool, Vault: vault.NewPGVault(pool, wrapper), MaxBodyBytes: 1 << 20}
+	ing := httptest.NewServer(httpx.Chain(ingHandler.Routes(), httpx.Recover))
 	t.Cleanup(ing.Close)
 
 	srv := &api.Server{
@@ -87,11 +92,14 @@ func setup(t *testing.T) *env {
 	hubCtx, stopHub := context.WithCancel(context.Background())
 	t.Cleanup(stopHub)
 	go srv.Hub.Run(hubCtx)
+	if configure != nil {
+		configure(srv, ingHandler)
+	}
 	a := httptest.NewServer(httpx.Chain(srv.Routes(), httpx.Recover))
 	t.Cleanup(a.Close)
 	w := &delivery.Worker{Pool: pool, Vault: vault.NewPGVault(pool, wrapper), Sender: delivery.NewSender(policy)}
 	checker := &contract.Checker{Pool: pool, MinSamples: 3, LearnWindow: time.Hour}
-	return &env{t: t, api: a, ingest: ing, worker: w, checker: checker, alerts: srv.AlertSender}
+	return &env{t: t, api: a, ingest: ing, worker: w, checker: checker, alerts: srv.AlertSender, pool: pool}
 }
 
 // call sends a JSON request and decodes the JSON response into a map.

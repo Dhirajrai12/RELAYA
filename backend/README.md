@@ -246,6 +246,31 @@ Dashboards stay live without refreshing: `GET /v1/orgs/{org}/stream` upgrades to
 
 How it works: writers call `realtime.Notify` inside their transaction (`pg_notify`, delivered only on commit). Each API process runs a `realtime.Hub` that `LISTEN`s and fans out by organization. The server pings every 25s (keeps IIS/ARR from idling the socket out) and re-validates the session and membership every 5 minutes. Allowed origins are `CORS_ALLOWED_ORIGINS` plus the host of `INGEST_BASE_URL`.
 
+## Operations
+
+**Rate limits** (in memory per process: right for one server; several servers would share them through Redis). Over-limit requests get `429` with `Retry-After`; providers retry, so nothing is lost.
+
+| What | Limit |
+|---|---|
+| Sign-in | 20 a minute per IP, and 10 **failed** attempts per 15 minutes per account (successful sign-ins never lock the owner out) |
+| Sign-up | 10 an hour per IP |
+| Authenticated API | `RATE_LIMIT_API_PER_MINUTE` per user or API key (default 600) |
+| Ingest | `RATE_LIMIT_INGEST_PER_SECOND` / `_BURST` per webhook URL (default 100/s, bursts of 1000); requests to unknown URLs: 60 a minute per IP |
+
+Client IPs come from `X-Real-IP`, which only IIS can set: keep `API_ADDR`/`INGEST_ADDR` on `127.0.0.1` when `TRUST_PROXY_HEADERS=true`.
+
+**Retention** (the worker, hourly). Event payloads with their deliveries, attempts and contract findings are kept for `EVENT_RETENTION` (default 30 days): whole months past it are dropped as partitions, the rest deleted in batches. The alert log is kept for `ALERT_RETENTION` (90 days); expired sessions are removed. Incidents, contracts, rules and the audit log are kept.
+
+**Backups.** `setup.ps1` schedules *Relaya database backup* nightly at 02:30 (`bin\backup.ps1`): `pg_dump` into `C:\relaya\backups` (admins and SYSTEM only), newest 14 kept, each with a SHA-256. `bin\restore-drill.ps1` restores the newest into a temporary database, compares row counts with the live one, times it (target: under an hour) and drops it. Run the drill after changes to the schema, and copy the backups off this machine too.
+
+**Metrics.** `GET /metrics` on the API (via IIS: `/api/metrics`) and ingest, in Prometheus format, with `Authorization: Bearer $METRICS_TOKEN` (404 without it). Requests and latency per route (IDs and tokens normalised), delivery and contract-check queue depth and lag (`relaya_delivery_lag_seconds` climbing means the worker is stuck), events and delivery outcomes in the last 5 minutes, open incidents, pending alerts, database size.
+
+**Monitoring.** `deploy\monitoring\install.ps1 -Downloads <folder> -PublicUrl https://<host>/grafana/` installs Prometheus (scrapes every 15 s, keeps 30 days, rules in `alerts.yml`), Grafana (the *Relaya overview* dashboard) and windows_exporter (CPU, memory, disk, service state, and the nightly backup's time and size) as services under `C:\relaya\monitoring`, all on 127.0.0.1. IIS publishes Grafana only, at `/grafana` behind its login (admin password in `secrets.txt`); Prometheus has no login, so it stays on `http://localhost:9090` (use Grafana's Explore instead). Alerts cover: a service down, deliveries stuck over 5 minutes, contract checks behind, the database unreachable, over 5% server errors, customer alerts piling up, no backup for a day, and disk C: under 10% free.
+
+**Security headers** (IIS, `web.config`): HSTS for this host only, a same-origin Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`.
+
+**Load** (measured on this 7-core server, sharing it with other sites; 10 webhooks, each forwarding to an endpoint): ~370 events/s sustained with no errors and nothing dropped; provider-facing latency p50 7 ms / p99 44 ms; every event delivered, provider → endpoint p99 under 300 ms; every event contract-checked with no backlog. That is about 100× the average rate of the Business plan (10M events a month).
+
 ## Design notes
 
 - **Events** are partitioned monthly (`events_YYYY_MM`); ingest creates partitions 2 months ahead every 6 hours. Dedup lives in `event_dedup` so uniqueness holds across partitions.

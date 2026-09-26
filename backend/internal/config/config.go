@@ -29,11 +29,21 @@ type Config struct {
 	DeliveryAllowPrivate bool
 	WorkerConcurrency    int
 
+	// Rate limits (0 = off). Sign-in and sign-up limits are fixed.
+	IngestPerSecond int // sustained requests per ingest URL
+	IngestBurst     int
+	APIPerMinute    int // authenticated API requests per user or API key
+
 	// Contracts: propose after this many samples, or after LearnWindow with at least 3.
 	ContractMinSamples  int
 	ContractLearnWindow time.Duration
 	// Incidents close themselves after this long without occurrences (0 disables).
 	IncidentAutoResolveAfter time.Duration
+	// Bearer token for GET /metrics (Prometheus). Empty = metrics off.
+	MetricsToken string
+	// Retention: event payloads (with deliveries and findings) and the alert log.
+	EventRetention time.Duration
+	AlertRetention time.Duration
 
 	// Alerts. DashboardURL prefixes links in alerts (defaults to INGEST_BASE_URL).
 	DashboardURL string
@@ -61,6 +71,7 @@ func Load() (Config, error) {
 		MasterKeyID:       get("MASTER_KEY_ID", "local-1"),
 		AllowedOrigins:    splitList(get("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
 		TrustProxyHeaders: get("TRUST_PROXY_HEADERS", "false") == "true",
+		MetricsToken:      get("METRICS_TOKEN", ""),
 	}
 
 	dev := c.Env == "dev"
@@ -71,6 +82,15 @@ func Load() (Config, error) {
 	if c.MaxBodyBytes, err = strconv.ParseInt(get("MAX_BODY_BYTES", "5242880"), 10, 64); err != nil {
 		return c, fmt.Errorf("MAX_BODY_BYTES: %w", err)
 	}
+	for _, v := range []struct {
+		name string
+		def  string
+		dst  *int
+	}{{"RATE_LIMIT_INGEST_PER_SECOND", "100", &c.IngestPerSecond}, {"RATE_LIMIT_INGEST_BURST", "1000", &c.IngestBurst}, {"RATE_LIMIT_API_PER_MINUTE", "600", &c.APIPerMinute}} {
+		if *v.dst, err = strconv.Atoi(get(v.name, v.def)); err != nil || *v.dst < 0 {
+			return c, fmt.Errorf("%s must be a whole number (0 turns the limit off)", v.name)
+		}
+	}
 	if c.WorkerConcurrency, err = strconv.Atoi(get("WORKER_CONCURRENCY", "8")); err != nil || c.WorkerConcurrency < 1 {
 		return c, errors.New("WORKER_CONCURRENCY must be a positive integer")
 	}
@@ -79,6 +99,12 @@ func Load() (Config, error) {
 	}
 	if c.ContractLearnWindow, err = time.ParseDuration(get("CONTRACT_LEARN_WINDOW", "24h")); err != nil {
 		return c, fmt.Errorf("CONTRACT_LEARN_WINDOW: %w", err)
+	}
+	if c.EventRetention, err = time.ParseDuration(get("EVENT_RETENTION", "720h")); err != nil || c.EventRetention < 24*time.Hour {
+		return c, errors.New("EVENT_RETENTION must be a duration of at least 24h (e.g. 720h for 30 days)")
+	}
+	if c.AlertRetention, err = time.ParseDuration(get("ALERT_RETENTION", "2160h")); err != nil || c.AlertRetention < 24*time.Hour {
+		return c, errors.New("ALERT_RETENTION must be a duration of at least 24h")
 	}
 	if c.IncidentAutoResolveAfter, err = time.ParseDuration(get("INCIDENT_AUTO_RESOLVE_AFTER", "1h")); err != nil {
 		return c, fmt.Errorf("INCIDENT_AUTO_RESOLVE_AFTER: %w", err)

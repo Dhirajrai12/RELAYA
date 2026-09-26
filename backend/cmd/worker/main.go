@@ -6,12 +6,14 @@ package main
 import (
 	"log/slog"
 	"os"
+	"time"
 
 	"relaya/internal/alerts"
 	"relaya/internal/config"
 	"relaya/internal/contract"
 	"relaya/internal/db"
 	"relaya/internal/delivery"
+	"relaya/internal/retention"
 	"relaya/internal/server"
 	"relaya/internal/vault"
 )
@@ -56,6 +58,7 @@ func main() {
 		SMTP: alerts.SMTP{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.SMTPFrom},
 	}
 	go alertSender.Run(ctx)
+	go retention.Run(ctx, pool, retention.Policy{Events: cfg.EventRetention, Alerts: cfg.AlertRetention}, time.Hour)
 
 	slog.Info("worker started", "concurrency", cfg.WorkerConcurrency, "allow_http", policy.AllowHTTP, "allow_private", policy.AllowPrivate)
 	w.Run(ctx)

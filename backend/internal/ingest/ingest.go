@@ -9,9 +9,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +22,7 @@ import (
 	"relaya/internal/httpx"
 	"relaya/internal/mask"
 	"relaya/internal/provider"
+	"relaya/internal/ratelimit"
 	"relaya/internal/realtime"
 	"relaya/internal/vault"
 )
@@ -33,6 +32,10 @@ type Handler struct {
 	Vault             vault.Vault
 	MaxBodyBytes      int64
 	TrustProxyHeaders bool // trust X-Real-IP / X-Forwarded-For (only behind our own proxy)
+
+	// Rate limits (nil = unlimited). Providers retry a 429 later, so nothing is lost.
+	PerWebhook *ratelimit.Limiter // requests per ingest URL
+	UnknownIP  *ratelimit.Limiter // requests to unknown URLs per IP (URL scanning)
 
 	cache webhookCache
 }
@@ -59,9 +62,21 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	now := time.Now().UTC()
 
-	wh, err := h.lookup(ctx, r.PathValue("token"))
+	token := r.PathValue("token")
+	ip := httpx.ClientIP(r, h.TrustProxyHeaders)
+	if ok, wait := h.UnknownIP.Check(ip); !ok {
+		return httpx.TooManyRequests(w, wait, "too many requests to unknown ingest URLs from this address")
+	}
+	wh, err := h.lookup(ctx, token)
 	if err != nil {
+		var he *httpx.Error
+		if errors.As(err, &he) && he.Status == http.StatusNotFound {
+			h.UnknownIP.Take(ip)
+		}
 		return err
+	}
+	if ok, wait := h.PerWebhook.Allow(token); !ok {
+		return httpx.TooManyRequests(w, wait, "this webhook is receiving more than its rate limit; retry later")
 	}
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.MaxBodyBytes))
@@ -209,36 +224,9 @@ func nullIfEmpty(s string) *string {
 	return &s
 }
 
-// clientIP returns the caller's IP. Behind our proxy (IIS/ARR), X-Real-IP is
-// overwritten by the proxy's rewrite rule, so clients cannot spoof it. The
-// X-Forwarded-For fallback takes the last entry, the one our proxy appended;
-// earlier entries come from the client.
+// clientIP returns the caller's IP (see httpx.ClientIP), or nil.
 func (h *Handler) clientIP(r *http.Request) *string {
-	ip := ""
-	if h.TrustProxyHeaders {
-		if v := r.Header.Get("X-Real-IP"); v != "" {
-			ip = v
-		} else if v := r.Header.Get("X-Forwarded-For"); v != "" {
-			ip = v[strings.LastIndex(v, ",")+1:]
-		}
-	}
-	if ip == "" {
-		ip = r.RemoteAddr
-	}
-	ip = stripPort(strings.TrimSpace(ip))
-	if net.ParseIP(ip) == nil {
-		return nil
-	}
-	return &ip
-}
-
-// stripPort handles "1.2.3.4:5678" and "[::1]:5678" (ARR includes the port in
-// X-Forwarded-For by default) as well as bare IPv4 and IPv6 addresses.
-func stripPort(s string) string {
-	if host, _, err := net.SplitHostPort(s); err == nil {
-		return host
-	}
-	return strings.Trim(s, "[]")
+	return nullIfEmpty(httpx.ClientIP(r, h.TrustProxyHeaders))
 }
 
 // ---- webhook lookup with a short cache --------------------------------------------

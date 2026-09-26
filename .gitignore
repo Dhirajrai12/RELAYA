@@ -5,6 +5,8 @@
 /pgsql/
 /pgdata/
 /rollback/
+/backups/
+/monitoring/
 /secrets.txt
 .env
 

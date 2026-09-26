@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -178,4 +180,46 @@ func Chain(h http.Handler, mw ...func(http.Handler) http.Handler) http.Handler {
 		h = mw[i](h)
 	}
 	return h
+}
+
+// ---- client IP and rate limiting ---------------------------------------------------
+
+// ClientIP returns the caller's IP, or "" if it can't be parsed. Behind our
+// proxy (IIS/ARR), X-Real-IP is overwritten by the proxy's rewrite rule, so
+// clients cannot spoof it. The X-Forwarded-For fallback takes the last entry,
+// the one our proxy appended; earlier entries come from the client. Only
+// trust these headers when the service is reachable solely through the proxy.
+func ClientIP(r *http.Request, trustProxy bool) string {
+	ip := ""
+	if trustProxy {
+		if v := r.Header.Get("X-Real-IP"); v != "" {
+			ip = v
+		} else if v := r.Header.Get("X-Forwarded-For"); v != "" {
+			ip = v[strings.LastIndex(v, ",")+1:]
+		}
+	}
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
+	ip = stripPort(strings.TrimSpace(ip))
+	if net.ParseIP(ip) == nil {
+		return ""
+	}
+	return ip
+}
+
+// stripPort handles "1.2.3.4:5678" and "[::1]:5678" (ARR includes the port in
+// X-Forwarded-For by default) as well as bare IPv4 and IPv6 addresses.
+func stripPort(s string) string {
+	if host, _, err := net.SplitHostPort(s); err == nil {
+		return host
+	}
+	return strings.Trim(s, "[]")
+}
+
+// TooManyRequests sets Retry-After and returns a 429 error for the handler to return.
+func TooManyRequests(w http.ResponseWriter, wait time.Duration, msg string) *Error {
+	secs := int((wait + time.Second - 1) / time.Second)
+	w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
+	return NewError(http.StatusTooManyRequests, "rate_limited", msg)
 }

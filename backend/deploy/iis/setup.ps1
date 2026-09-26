@@ -88,7 +88,7 @@ if (Test-Path (Join-Path $WebDist 'index.html')) {
 } else {
   Write-Host "    no dashboard build at $WebDist (run npm run build in web\) - skipped" -ForegroundColor Yellow
 }
-Copy-Item (Join-Path $PSScriptRoot 'web.config') $site -Force
+(Get-Content (Join-Path $PSScriptRoot 'web.config') -Raw) -replace '__HOST__', $HostName | Set-Content (Join-Path $site 'web.config') -Encoding UTF8 -NoNewline
 
 Step 'Run migrations'
 & (Join-Path $bin 'migrate.exe')
@@ -115,6 +115,21 @@ icacls $envFile /inheritance:r /grant:r 'Administrators:F' 'SYSTEM:F' `
   'NT SERVICE\relaya-api:R' 'NT SERVICE\relaya-ingest:R' 'NT SERVICE\relaya-worker:R' | Out-Null
 
 foreach ($s in $services) { Start-Service $s.Name }
+
+Step 'Nightly database backup'
+# backup.ps1 and restore-drill.ps1 live next to the services; backups hold customer data,
+# so the folder is for admins and SYSTEM only.
+Copy-Item (Join-Path $PSScriptRoot 'backup.ps1'), (Join-Path $PSScriptRoot 'restore-drill.ps1') $bin -Force
+$backups = Join-Path $InstallDir 'backups'
+New-Item -ItemType Directory -Force $backups | Out-Null
+icacls $backups /inheritance:r /grant:r 'Administrators:(OI)(CI)F' 'SYSTEM:(OI)(CI)F' | Out-Null
+$taskName = 'Relaya database backup'
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $bin 'backup.ps1')`" -InstallDir `"$InstallDir`""
+$trigger = New-ScheduledTaskTrigger -Daily -At '02:30'
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 2) -RestartCount 2 -RestartInterval (New-TimeSpan -Minutes 15)
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
+  -User 'SYSTEM' -RunLevel Highest -Description 'pg_dump of the Relaya database into C:\relaya\backups (keeps 14).' -Force | Out-Null
 
 # ---- IIS site ------------------------------------------------------------------
 Step "IIS site $SiteName ($HostName)"
