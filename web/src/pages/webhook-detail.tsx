@@ -42,6 +42,26 @@ const setupSteps: Record<string, string[]> = {
     'Paste the URL above, content type application/json.',
     'Set a Secret there and enter the same secret below.',
   ],
+  cashfree: [
+    'Cashfree Merchant Dashboard → Payment Gateway → Developers → Webhooks → Add Webhook Endpoint.',
+    'Paste the URL above and pick the events (e.g. payment success, failed, refund).',
+    'Enter your Payment Gateway secret key (the API client secret) below: Cashfree signs webhooks with it.',
+  ],
+  payu: [
+    'PayU Dashboard → Settings → Webhooks → Create Webhook, for each event type you want (successful, failed, refund).',
+    'Paste the URL above.',
+    'Enter your merchant salt below: PayU puts a hash made with it in every webhook.',
+  ],
+  phonepe: [
+    'PhonePe Business Dashboard → Developer Settings → Webhooks → Create Webhook.',
+    'Paste the URL above, choose a username and password there, and pick the events.',
+    'Enter the same username and password below as username:password. (PhonePe proves the sender with them; it does not sign the body.)',
+  ],
+  standardwebhooks: [
+    'For senders that follow the Standard Webhooks spec or use Svix (e.g. Resend, Clerk, OpenAI, Supabase): they send webhook-id / webhook-timestamp / webhook-signature (or svix-*) headers.',
+    "Add the URL above as a webhook endpoint in the sender's dashboard.",
+    'Copy the endpoint\'s signing secret (whsec_…, or a whpk_… public key for signed-with-Ed25519 endpoints) and enter it below.',
+  ],
   generic: [
     'Configure the sender to POST JSON to the URL above.',
     'For signature checks, have it send a hex HMAC-SHA256 of the raw body in the signature header, keyed with the secret below.',

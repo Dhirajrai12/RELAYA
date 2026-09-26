@@ -53,8 +53,8 @@ export function DocsPage() {
             <ol className="list-decimal space-y-3 pl-5">
               <li>
                 <Link to="/signup" className="text-l-accent underline-offset-4 hover:underline">Sign up</Link> and create a{' '}
-                <b className="text-l-text">project</b>, then a <b className="text-l-text">webhook</b>. Pick the provider (Razorpay, Stripe,
-                Shopify, GitHub or generic HMAC) and paste its signing secret, so Relaya can verify what arrives.
+                <b className="text-l-text">project</b>, then a <b className="text-l-text">webhook</b>. Pick the provider (Razorpay, Cashfree, PayU,
+                PhonePe, Stripe, Shopify, GitHub, Standard Webhooks / Svix, or generic HMAC) and paste its signing secret, so Relaya can verify what arrives.
               </li>
               <li>
                 Give the provider your webhook's URL instead of your own endpoint:

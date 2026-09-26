@@ -111,7 +111,11 @@ Callers without access to an org get 404, not 403, so org IDs can't be probed.
 
 ## Webhook providers
 
-`generic` (hex HMAC-SHA256 in a configurable header, default `X-Signature`), `razorpay`, `stripe` (with 5-minute timestamp tolerance), `shopify`, `github`.
+`generic` (hex HMAC-SHA256 in a configurable header, default `X-Signature`), `razorpay`, `stripe` (with 5-minute timestamp tolerance), `shopify`, `github`,
+`standardwebhooks` ([Standard Webhooks](https://www.standardwebhooks.com/) and Svix: `webhook-*` or `svix-*` headers, `whsec_` HMAC or `whpk_` Ed25519 keys, 5-minute tolerance, dedup on the message ID),
+`cashfree` (base64 HMAC-SHA256 of timestamp + body with the PG secret key, 5-minute tolerance),
+`payu` (SHA-512 reverse hash in the body, keyed with the merchant salt; form or JSON),
+`phonepe` (`Authorization` = SHA-256 of `username:password`; proves the sender, not the body).
 Add one in `internal/provider`: implement `Verify`, `DedupKey`, `EventType` and register it.
 
 Ingest outcomes:

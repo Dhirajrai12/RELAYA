@@ -309,7 +309,7 @@ function Hero() {
 }
 
 function WorksWith() {
-  const live = ['Razorpay', 'Stripe', 'Shopify', 'GitHub', 'Any HMAC webhook']
+  const live = ['Razorpay', 'Cashfree', 'PayU', 'PhonePe', 'Stripe', 'Shopify', 'GitHub', 'Standard Webhooks (Svix)', 'Any HMAC webhook']
   const next = ['Zoho', 'HubSpot', 'Tally', 'Shiprocket', 'Keka']
   const items = [...live.map((name) => ({ name, live: true })), ...next.map((name) => ({ name, live: false }))]
   return (
@@ -440,7 +440,7 @@ function Step({ n, title, body, children }: { n: string; title: string; body: st
 function Features() {
   const items: { icon: LucideIcon; title: string; body: string; live: boolean }[] = [
     { icon: WebhookIcon, title: 'Webhook gateway', body: 'A separate, tiny ingest path that verifies, stores and answers in milliseconds. The dashboard can go down; ingest keeps running.', live: true },
-    { icon: FingerprintIcon, title: 'Signature verification', body: 'Razorpay, Stripe, Shopify, GitHub and generic HMAC out of the box. Stripe timestamps checked against replay attacks.', live: true },
+    { icon: FingerprintIcon, title: 'Signature verification', body: 'Razorpay, Cashfree, PayU, PhonePe, Stripe, Shopify, GitHub, Standard Webhooks (Svix) and generic HMAC out of the box. Stripe timestamps checked against replay attacks.', live: true },
     { icon: FileSearchIcon, title: 'Event explorer', body: 'Search by provider event ID, type, status or signature. Full headers and payload, with secrets masked.', live: true },
     { icon: GitCompareArrowsIcon, title: 'Integration contracts', body: 'Learns the shape of each payload and flags a renamed, removed or retyped field as a breaking change.', live: false },
     { icon: NetworkIcon, title: 'Impact analysis', body: 'Provider → integration → connection → customer. Know exactly who a failure touches.', live: false },

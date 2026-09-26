@@ -41,7 +41,7 @@ const areas: { icon: LucideIcon; title: string; points: ReactNode[] }[] = [
     icon: WebhookIcon,
     title: 'Webhook security',
     points: [
-      'Provider signatures are verified on arrival (Razorpay, Stripe, Shopify, GitHub, or any HMAC); failures are recorded and can alert you.',
+      'Provider signatures are verified on arrival (Razorpay, Cashfree, PayU, PhonePe, Stripe, Shopify, GitHub, Standard Webhooks / Svix, or any HMAC); failures are recorded and can alert you.',
       <>Every request we forward is signed with your destination's own secret, with a timestamp so captured requests can't be replayed later (<Link to="/docs#receive" className="text-l-accent underline-offset-4 hover:underline">how to verify</Link>).</>,
       'Destinations must be public HTTPS addresses. Private, internal and cloud-metadata addresses are refused, checked again at connection time, and redirects are never followed.',
     ],
