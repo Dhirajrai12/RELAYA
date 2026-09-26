@@ -27,6 +27,7 @@ const pages = {
   contractDetail: () => import('@/pages/contract-detail'),
   incidents: () => import('@/pages/incidents'),
   alerts: () => import('@/pages/alerts'),
+  public: () => import('@/pages/public'),
 }
 const LandingPage = lazy(() => pages.landing().then((m) => ({ default: m.LandingPage })))
 const OverviewPage = lazy(() => pages.overview().then((m) => ({ default: m.OverviewPage })))
@@ -36,6 +37,9 @@ const WebhookDetailPage = lazy(() => pages.webhookDetail().then((m) => ({ defaul
 const ProjectsPage = lazy(() => pages.projects().then((m) => ({ default: m.ProjectsPage })))
 const MembersPage = lazy(() => pages.settings().then((m) => ({ default: m.MembersPage })))
 const ApiKeysPage = lazy(() => pages.settings().then((m) => ({ default: m.ApiKeysPage })))
+const DocsPage = lazy(() => pages.public().then((m) => ({ default: m.DocsPage })))
+const StatusPage = lazy(() => pages.public().then((m) => ({ default: m.StatusPage })))
+const SecurityPage = lazy(() => pages.public().then((m) => ({ default: m.SecurityPage })))
 const AlertsPage = lazy(() => pages.alerts().then((m) => ({ default: m.AlertsPage })))
 const AuditPage = lazy(() => pages.settings().then((m) => ({ default: m.AuditPage })))
 const ContractsPage = lazy(() => pages.contracts().then((m) => ({ default: m.ContractsPage })))
@@ -46,7 +50,7 @@ const IncidentsPage = lazy(() => pages.incidents().then((m) => ({ default: m.Inc
 function usePreloadDashboard() {
   useEffect(() => {
     const run = () => {
-      for (const [name, load] of Object.entries(pages)) if (name !== 'landing') void load()
+      for (const [name, load] of Object.entries(pages)) if (name !== 'landing' && name !== 'public') void load()
     }
     const id = setTimeout(run, 1200) // after the first page has rendered
     return () => clearTimeout(id)
@@ -62,6 +66,10 @@ export default function App() {
         <Route path="/signup" element={token ? <Navigate to="/overview" replace /> : <SignupPage />} />
         {/* Signed-out visitors land on the marketing page; signed-in users go to the app. */}
         <Route path="/" element={token ? <Navigate to="/overview" replace /> : <LandingPage />} />
+        {/* Public pages, signed in or not. */}
+        <Route path="/docs" element={<DocsPage />} />
+        <Route path="/status" element={<StatusPage />} />
+        <Route path="/security" element={<SecurityPage />} />
         <Route path="/*" element={token ? <SignedIn /> : <Navigate to="/login" replace />} />
       </Routes>
     </Suspense>

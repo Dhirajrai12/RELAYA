@@ -18,7 +18,7 @@ import {
   XIcon,
   type LucideIcon,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
 import { LogoMark } from '@/components/logo'
@@ -38,15 +38,36 @@ import { K, MiniChart, MiniEvents, N, S } from './visuals'
 
 const TRIAL_DAYS = 7
 
+// Hash links work from any page (they load the landing page, which scrolls to the section).
 const nav = [
-  { href: '#how', label: 'How it works' },
-  { href: '#features', label: 'Features' },
-  { href: '#security', label: 'Security' },
-  { href: '#pricing', label: 'Pricing' },
+  { href: '/#how', label: 'How it works' },
+  { href: '/#features', label: 'Features' },
+  { href: '/#pricing', label: 'Pricing' },
+  { href: '/docs', label: 'Docs' },
+  { href: '/security', label: 'Security' },
+  { href: '/status', label: 'Status' },
 ]
+
+/** A nav link: router navigation for pages, a plain anchor for sections of the landing page. */
+function NavLink({ href, className, onClick, children }: { href: string; className?: string; onClick?: () => void; children: ReactNode }) {
+  return href.includes('#') ? (
+    <a href={href} className={className} onClick={onClick}>
+      {children}
+    </a>
+  ) : (
+    <Link to={href} className={className} onClick={onClick}>
+      {children}
+    </Link>
+  )
+}
 
 export function LandingPage() {
   const { progress, scrolled } = useScroll()
+  // Arriving from another page at /#section: scroll there once the sections exist.
+  useEffect(() => {
+    const id = window.location.hash.slice(1)
+    if (id) requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView())
+  }, [])
   return (
     <div className="min-h-svh overflow-x-clip bg-l-bg text-l-muted antialiased transition-colors duration-300">
       <ScrollProgress progress={progress} />
@@ -154,7 +175,7 @@ function IconTile({ icon: Icon }: { icon: LucideIcon }) {
 
 // ---- header -----------------------------------------------------------------------
 
-function Header({ scrolled }: { scrolled: boolean }) {
+export function Header({ scrolled }: { scrolled: boolean }) {
   const [open, setOpen] = useState(false)
   return (
     <header
@@ -168,18 +189,18 @@ function Header({ scrolled }: { scrolled: boolean }) {
           <LogoMark className="size-8 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-105" />
           <span className="text-sm font-semibold tracking-[0.2em] text-l-text">RELAYA</span>
         </Link>
-        <nav className="hidden items-center gap-1 text-sm md:flex">
+        <nav className="hidden items-center gap-1 text-sm lg:flex">
           {nav.map((n) => (
-            <a
+            <NavLink
               key={n.href}
               href={n.href}
               className="relative rounded-md px-3 py-1.5 transition after:absolute after:inset-x-3 after:-bottom-0.5 after:h-px after:origin-left after:scale-x-0 after:bg-[#14b886] after:transition-transform after:duration-300 hover:text-l-text hover:after:scale-x-100"
             >
               {n.label}
-            </a>
+            </NavLink>
           ))}
         </nav>
-        <div className="ml-auto hidden items-center gap-3 md:flex">
+        <div className="ml-auto hidden items-center gap-3 lg:flex">
           <ThemeToggle />
           <Link to="/login" className="px-2 text-sm font-medium text-l-text/80 transition hover:text-l-text">
             Log in
@@ -187,11 +208,11 @@ function Header({ scrolled }: { scrolled: boolean }) {
           <SecondaryCta to="/signup" className="h-9 px-4">
             Sign up
           </SecondaryCta>
-          <PrimaryCta className="hidden h-9 px-4 lg:inline-flex">Start free trial</PrimaryCta>
+          <PrimaryCta className="hidden h-9 px-4 xl:inline-flex">Start free trial</PrimaryCta>
         </div>
         <button
           type="button"
-          className="ml-auto flex size-10 items-center justify-center rounded-lg text-l-text transition hover:bg-l-soft md:hidden"
+          className="ml-auto flex size-10 items-center justify-center rounded-lg text-l-text transition hover:bg-l-soft lg:hidden"
           aria-label={open ? 'Close menu' : 'Open menu'}
           aria-expanded={open}
           onClick={() => setOpen(!open)}
@@ -200,12 +221,12 @@ function Header({ scrolled }: { scrolled: boolean }) {
         </button>
       </div>
       {open && (
-        <div className="border-t border-l-border px-4 pb-5 pt-2 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-2 md:hidden">
+        <div className="border-t border-l-border px-4 pb-5 pt-2 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-2 lg:hidden">
           <nav className="flex flex-col">
             {nav.map((n) => (
-              <a key={n.href} href={n.href} onClick={() => setOpen(false)} className="py-3 text-base text-l-text/85">
+              <NavLink key={n.href} href={n.href} onClick={() => setOpen(false)} className="py-3 text-base text-l-text/85">
                 {n.label}
-              </a>
+              </NavLink>
             ))}
           </nav>
           <div className="mt-2 flex items-center justify-between border-t border-l-border py-3">
@@ -647,7 +668,7 @@ function FinalCta() {
   )
 }
 
-function Footer() {
+export function Footer() {
   return (
     <footer className="border-t border-l-border px-4 py-12 sm:px-6">
       <div className="mx-auto flex max-w-6xl flex-col gap-8 md:flex-row md:items-start md:justify-between">
@@ -664,9 +685,9 @@ function Footer() {
             <ul className="space-y-2">
               {nav.map((n) => (
                 <li key={n.href}>
-                  <a href={n.href} className="transition hover:text-l-text">
+                  <NavLink href={n.href} className="transition hover:text-l-text">
                     {n.label}
-                  </a>
+                  </NavLink>
                 </li>
               ))}
             </ul>
