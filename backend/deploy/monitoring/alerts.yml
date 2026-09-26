@@ -1,0 +1,73 @@
+# Alert rules, shown in Prometheus (http://localhost:9090/alerts) and on the Grafana dashboard.
+groups:
+  - name: relaya
+    rules:
+      - alert: RelayaServiceDown
+        expr: up{job=~"relaya-.*"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.job }} is not answering"
+          description: "Prometheus cannot scrape {{ $labels.job }}. Check the Windows service and its log."
+
+      - alert: RelayaDeliveriesStuck
+        expr: relaya_delivery_lag_seconds > 300
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Deliveries are {{ $value | humanizeDuration }} overdue"
+          description: "The oldest due delivery has waited over 5 minutes: the worker is stuck, stopped or overloaded."
+
+      - alert: RelayaContractChecksBehind
+        expr: relaya_contract_lag_seconds > 600
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Contract checks are {{ $value | humanizeDuration }} behind"
+          description: "Breaking changes will be detected late."
+
+      - alert: RelayaDatabaseUnreachable
+        expr: relaya_collect_up == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "The API cannot read the database"
+
+      - alert: RelayaAPIErrors
+        expr: |
+          sum(rate(relaya_http_requests_total{status="5xx"}[5m]))
+            / clamp_min(sum(rate(relaya_http_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 5% of requests are failing with 5xx"
+
+      - alert: RelayaAlertsNotSending
+        expr: relaya_alerts_pending > 50
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value }} customer alerts are waiting to be sent"
+
+      - alert: RelayaBackupMissing
+        expr: time() - relaya_backup_last_success_timestamp_seconds > 26 * 3600
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "No successful database backup for over a day"
+          description: "Check C:\relaya\backups\backup.log and the 'Relaya database backup' scheduled task."
+
+      - alert: RelayaBackupNeverRan
+        expr: absent(relaya_backup_last_success_timestamp_seconds)
+        for: 30h
+        labels: {severity: critical}
+        annotations:
+          summary: "No database backup has been recorded"
+
+      - alert: DiskSpaceLow
+        expr: windows_logical_disk_free_bytes{volume="C:"} / windows_logical_disk_size_bytes{volume="C:"} < 0.10
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: "Drive C: has {{ $value | humanizePercentage }} free"
+          description: "The database, backups and every site on this server need disk space."
