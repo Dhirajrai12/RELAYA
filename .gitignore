@@ -8,6 +8,7 @@
 /backups/
 /monitoring/
 /secrets.txt
+/stripe-whsec.txt
 .env
 
 # build output
