@@ -33,6 +33,9 @@ import type {
   TestDeliveryResult,
   User,
   Webhook,
+  Connection,
+  ConnectProviders,
+  Integration,
 } from './types'
 
 /** The selected org ID. Only call inside pages rendered under RequireOrg. */
@@ -686,5 +689,108 @@ export function useRepairSuggestion(incidentId: string | null) {
     enabled: !!incidentId,
     retry: false,
     staleTime: 60_000,
+  })
+}
+
+// ---- connections ----------------------------------------------------------------
+
+export function useConnectProviders() {
+  return useQuery({
+    queryKey: ['connect-providers'],
+    queryFn: () => get<ConnectProviders>('/connect/providers'),
+    staleTime: Infinity,
+  })
+}
+
+export function useIntegrations() {
+  const orgId = useOrgId()
+  const interval = useLiveInterval(30_000)
+  return useQuery({
+    queryKey: ['integrations', orgId],
+    queryFn: () => get<List<Integration>>(orgPath(orgId, '/integrations')),
+    refetchInterval: interval,
+  })
+}
+
+export interface IntegrationInput {
+  provider: string
+  key?: string
+  name?: string
+  client_id?: string
+  client_secret?: string
+  scopes?: string[]
+}
+
+export function useCreateIntegration() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: IntegrationInput) => post<Integration>(orgPath(orgId, '/integrations'), v),
+    onSuccess: (r) => upsertInList(qc, ['integrations', orgId], r),
+  })
+}
+
+export function useUpdateIntegration() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...v }: { id: string; name?: string; client_id?: string; client_secret?: string; scopes?: string[] }) =>
+      patch<Integration>(orgPath(orgId, `/integrations/${id}`), v),
+    onSuccess: (r) => upsertInList(qc, ['integrations', orgId], r),
+  })
+}
+
+export function useDeleteIntegration() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => del(orgPath(orgId, `/integrations/${id}`)),
+    onSuccess: (_, id) => {
+      removeFromList(qc, ['integrations', orgId], id)
+      qc.invalidateQueries({ queryKey: ['connections', orgId] })
+    },
+  })
+}
+
+export function useConnections() {
+  const orgId = useOrgId()
+  const interval = useLiveInterval(30_000)
+  return useQuery({
+    queryKey: ['connections', orgId],
+    queryFn: () => get<List<Connection>>(orgPath(orgId, '/connections')),
+    refetchInterval: interval,
+  })
+}
+
+export function useDeleteConnection() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => del(orgPath(orgId, `/connections/${id}`)),
+    onSuccess: (_, id) => {
+      removeFromList(qc, ['connections', orgId], id)
+      qc.invalidateQueries({ queryKey: ['integrations', orgId] })
+    },
+  })
+}
+
+export function useRefreshConnection() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      post<{ connection: Connection; refreshed: boolean; error?: string }>(orgPath(orgId, `/connections/${id}/refresh`)),
+    onSuccess: (r) => {
+      upsertInList(qc, ['connections', orgId], r.connection)
+      qc.invalidateQueries({ queryKey: ['integrations', orgId] })
+    },
+  })
+}
+
+export function useCreateConnectSession() {
+  const orgId = useOrgId()
+  return useMutation({
+    mutationFn: (v: { integration: string; end_user_id: string; return_url?: string }) =>
+      post<{ id: string; url: string; expires_at: string }>(orgPath(orgId, '/connect-sessions'), v),
   })
 }

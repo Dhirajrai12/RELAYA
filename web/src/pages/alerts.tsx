@@ -36,6 +36,8 @@ const kindInfo: Record<AlertKind | 'test', { label: string; help: string }> = {
   destination_failing: { label: 'Destination failing', help: 'Your endpoint failed 3 deliveries in a row. Sent once per outage.' },
   destination_recovered: { label: 'Destination recovered', help: 'The endpoint accepted a delivery again after failing.' },
   signature_failures: { label: 'Signature failures', help: 'A webhook rejected events with a bad signature. At most once an hour.' },
+  connection_broken: { label: 'Connection broken', help: "A user's connected account stopped working (access revoked or login changed). Sent once per break." },
+  connection_recovered: { label: 'Connection recovered', help: 'A broken connection works again, e.g. after the user reconnected.' },
   test: { label: 'Test', help: '' },
 }
 const allKinds = Object.keys(kindInfo).filter((k) => k !== 'test') as AlertKind[]

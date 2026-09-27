@@ -28,6 +28,8 @@ const pages = {
   incidents: () => import('@/pages/incidents'),
   alerts: () => import('@/pages/alerts'),
   public: () => import('@/pages/public'),
+  connections: () => import('@/pages/connections'),
+  connect: () => import('@/pages/connect'),
 }
 const LandingPage = lazy(() => pages.landing().then((m) => ({ default: m.LandingPage })))
 const OverviewPage = lazy(() => pages.overview().then((m) => ({ default: m.OverviewPage })))
@@ -45,12 +47,15 @@ const AuditPage = lazy(() => pages.settings().then((m) => ({ default: m.AuditPag
 const ContractsPage = lazy(() => pages.contracts().then((m) => ({ default: m.ContractsPage })))
 const ContractDetailPage = lazy(() => pages.contractDetail().then((m) => ({ default: m.ContractDetailPage })))
 const IncidentsPage = lazy(() => pages.incidents().then((m) => ({ default: m.IncidentsPage })))
+const ConnectionsPage = lazy(() => pages.connections().then((m) => ({ default: m.ConnectionsPage })))
+const ConnectPage = lazy(() => pages.connect().then((m) => ({ default: m.ConnectPage })))
+const ConnectResultPage = lazy(() => pages.connect().then((m) => ({ default: m.ConnectResultPage })))
 
 /** Once signed in and idle, fetch the other dashboard pages so navigating never waits. */
 function usePreloadDashboard() {
   useEffect(() => {
     const run = () => {
-      for (const [name, load] of Object.entries(pages)) if (name !== 'landing' && name !== 'public') void load()
+      for (const [name, load] of Object.entries(pages)) if (name !== 'landing' && name !== 'public' && name !== 'connect') void load()
     }
     const id = setTimeout(run, 1200) // after the first page has rendered
     return () => clearTimeout(id)
@@ -70,6 +75,9 @@ export default function App() {
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/status" element={<StatusPage />} />
         <Route path="/security" element={<SecurityPage />} />
+        {/* Connect links, opened by our customers' own users (no Relaya login). */}
+        <Route path="/connect/result" element={<ConnectResultPage />} />
+        <Route path="/connect/:token" element={<ConnectPage />} />
         <Route path="/*" element={token ? <SignedIn /> : <Navigate to="/login" replace />} />
       </Routes>
     </Suspense>
@@ -105,6 +113,7 @@ function SignedIn() {
         <Route path="contracts" element={<ContractsPage />} />
         <Route path="contracts/:id" element={<ContractDetailPage />} />
         <Route path="incidents" element={<IncidentsPage />} />
+        <Route path="connections" element={<ConnectionsPage />} />
         <Route path="settings/members" element={<MembersPage />} />
         <Route path="settings/api-keys" element={<AdminOnly><ApiKeysPage /></AdminOnly>} />
         <Route path="settings/alerts" element={<AlertsPage />} />

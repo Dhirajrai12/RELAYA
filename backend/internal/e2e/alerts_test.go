@@ -45,7 +45,7 @@ func TestAlertsEndToEnd(t *testing.T) {
 
 	// ---- channels ----
 	settings := e.call("GET", base+"/alert-settings", tok, nil, 200)
-	if settings["email_enabled"] != false || len(settings["kinds"].([]any)) != 5 {
+	if settings["email_enabled"] != false || len(settings["kinds"].([]any)) != 7 {
 		t.Fatalf("settings: %v", settings)
 	}
 	all := []string{"incident_opened", "incident_resolved", "destination_failing", "destination_recovered", "signature_failures"}

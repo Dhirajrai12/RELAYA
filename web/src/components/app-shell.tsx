@@ -6,6 +6,7 @@ import {
   LayoutDashboardIcon,
   LogOutIcon,
   MenuIcon,
+  PlugIcon,
   ScrollTextIcon,
   UsersIcon,
   WebhookIcon,
@@ -35,6 +36,7 @@ const nav = [
   { to: '/incidents', label: 'Incidents', icon: ShieldAlertIcon, badge: 'incidents' as const },
   { to: '/webhooks', label: 'Webhooks', icon: WebhookIcon },
   { to: '/contracts', label: 'Contracts', icon: FileCheck2Icon },
+  { to: '/connections', label: 'Connections', icon: PlugIcon },
   { to: '/projects', label: 'Projects', icon: FolderIcon },
 ]
 

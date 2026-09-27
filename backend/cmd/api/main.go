@@ -12,6 +12,7 @@ import (
 	"relaya/internal/api"
 	"relaya/internal/auth"
 	"relaya/internal/config"
+	"relaya/internal/connect"
 	"relaya/internal/db"
 	"relaya/internal/delivery"
 	"relaya/internal/httpx"
@@ -61,11 +62,14 @@ func main() {
 	srv.IncidentAutoResolveAfter = cfg.IncidentAutoResolveAfter
 	srv.TrustProxyHeaders = cfg.TrustProxyHeaders
 	srv.Status = &status.Service{Pool: pool}
+	srv.DashboardURL = cfg.DashboardURL
+	srv.Connect = &connect.Service{Pool: pool, Vault: srv.Vault, Client: connect.NewClient(), RedirectURI: cfg.ConnectRedirectURI}
 	srv.Limits = api.Limits{
 		LoginIP:    ratelimit.New(20, time.Minute, 20),
 		LoginEmail: ratelimit.New(10, 15*time.Minute, 10), // failed attempts only
 		SignupIP:   ratelimit.New(10, time.Hour, 10),
 		StatusIP:   ratelimit.New(120, time.Minute, 60),
+		ConnectIP:  ratelimit.New(60, time.Minute, 30),
 	}
 	if cfg.APIPerMinute > 0 {
 		srv.Limits.Caller = ratelimit.New(cfg.APIPerMinute, time.Minute, max(cfg.APIPerMinute/2, 10))

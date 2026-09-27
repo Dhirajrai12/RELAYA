@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,6 +69,16 @@ var orgRoutes = []struct {
 	{"PATCH", "/v1/orgs/{org}/repair-rules/{rule}", "admin"},
 	{"DELETE", "/v1/orgs/{org}/repair-rules/{rule}", "admin"},
 	{"GET", "/v1/orgs/{org}/audit-logs", "admin"},
+	{"GET", "/v1/orgs/{org}/integrations", "member"},
+	{"POST", "/v1/orgs/{org}/integrations", "admin"},
+	{"PATCH", "/v1/orgs/{org}/integrations/{integration}", "admin"},
+	{"DELETE", "/v1/orgs/{org}/integrations/{integration}", "admin"},
+	{"GET", "/v1/orgs/{org}/connections", "member"},
+	{"GET", "/v1/orgs/{org}/connections/{connection}", "member"},
+	{"DELETE", "/v1/orgs/{org}/connections/{connection}", "admin"},
+	{"POST", "/v1/orgs/{org}/connections/{connection}/refresh", "admin"},
+	{"GET", "/v1/orgs/{org}/connections/{connection}/token", "admin"}, // hands out the user's access token
+	{"POST", "/v1/orgs/{org}/connect-sessions", "admin"},
 }
 
 func TestEveryOrgRouteHasAPolicy(t *testing.T) {
@@ -135,10 +146,18 @@ func TestPermissions(t *testing.T) {
 	channel := e.call("POST", base+"/alert-channels", owner, map[string]any{"type": "webhook", "name": "c", "url": rc.srv.URL, "events": []string{"incident_opened"}}, 201)["channel"].(map[string]any)["id"].(string)
 	rule := e.call("POST", base+"/repair-rules", owner, map[string]any{"webhook_id": wh["id"], "name": "r", "ops": []any{map[string]any{"op": "remove", "path": "x"}}}, 201)["id"].(string)
 
+	integration := e.call("POST", base+"/integrations", owner, map[string]any{"provider": "hubspot", "client_id": "c", "client_secret": "s"}, 201)["id"].(string)
+	var connection string
+	if err := e.pool.QueryRow(context.Background(), `INSERT INTO connections (org_id, integration_id, end_user_id, credentials_enc)
+		VALUES ($1, $2, 'u1', '\x00') RETURNING id`, orgID, integration).Scan(&connection); err != nil {
+		t.Fatal(err)
+	}
+
 	ids := map[string]string{
 		"{org}": orgID, "{user}": adminID, "{key}": adminKey["api_key"].(map[string]any)["id"].(string), "{project}": proj,
 		"{webhook}": wh["id"].(string), "{event}": eventID, "{destination}": dest, "{delivery}": delivery,
 		"{contract}": contract, "{incident}": incident, "{channel}": channel, "{rule}": rule,
+		"{integration}": integration, "{connection}": connection,
 	}
 	status := func(method, path, token string) (int, string) {
 		req, _ := http.NewRequest(method, e.api.URL+path, bytes.NewBufferString("{}"))

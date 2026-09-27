@@ -25,6 +25,7 @@ import (
 	"relaya/internal/alerts"
 	"relaya/internal/api"
 	"relaya/internal/auth"
+	"relaya/internal/connect"
 	"relaya/internal/contract"
 	"relaya/internal/db"
 	"relaya/internal/delivery"
@@ -89,6 +90,8 @@ func setupWith(t *testing.T, configure func(*api.Server, *ingest.Handler)) *env 
 	srv.Sender = delivery.NewSender(policy)
 	srv.AlertSender = &alerts.Sender{Pool: pool, Vault: srv.Vault, HTTP: policy.Client(), Sign: delivery.Sign, DashboardURL: "https://dash.example"}
 	srv.Hub = realtime.NewHub(pool)
+	srv.Connect = &connect.Service{Pool: pool, Vault: srv.Vault, Client: connect.NewClient(), RedirectURI: "https://relaya.test/api/v1/connect/callback"}
+	srv.DashboardURL = "https://relaya.test"
 	hubCtx, stopHub := context.WithCancel(context.Background())
 	t.Cleanup(stopHub)
 	go srv.Hub.Run(hubCtx)

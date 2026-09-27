@@ -310,7 +310,14 @@ export interface ReplayPlan {
   }[]
 }
 
-export type AlertKind = 'incident_opened' | 'incident_resolved' | 'destination_failing' | 'destination_recovered' | 'signature_failures'
+export type AlertKind =
+  | 'incident_opened'
+  | 'incident_resolved'
+  | 'destination_failing'
+  | 'destination_recovered'
+  | 'signature_failures'
+  | 'connection_broken'
+  | 'connection_recovered'
 export type AlertChannelType = 'slack' | 'email' | 'webhook'
 
 export interface AlertChannel {
@@ -415,4 +422,68 @@ export interface RepairSuggestion {
   explanation: string
   /** The suggested value is a placeholder the user should confirm. */
   needs_value: boolean
+}
+
+// ---- connections ----------------------------------------------------------------
+
+export type ConnectAuth = 'oauth2' | 'login'
+
+export interface ConnectProvider {
+  key: string
+  name: string
+  auth: ConnectAuth
+  docs_url: string
+  api_base: string
+  default_scopes: string[] | null
+  login_label?: string
+}
+
+export interface ConnectProviders extends List<ConnectProvider> {
+  callback_url: string
+}
+
+export interface Integration {
+  id: string
+  key: string
+  provider: string
+  provider_name: string
+  auth: ConnectAuth
+  name: string
+  client_id: string
+  has_client_secret: boolean
+  scopes: string[]
+  connections: number
+  broken: number
+  created_at: string
+  updated_at: string
+}
+
+export interface Connection {
+  id: string
+  integration_id: string
+  integration_key: string
+  integration_name: string
+  provider: string
+  end_user_id: string
+  status: 'active' | 'broken'
+  expires_at: string | null
+  last_refreshed_at: string | null
+  refresh_failures: number
+  last_error: string
+  broken_at: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface ConnectSessionInfo {
+  org_name: string
+  integration_name: string
+  provider: string
+  provider_name: string
+  auth: ConnectAuth
+  login_label: string
+  status: 'open' | 'completed' | 'expired'
+  error: string
+  expires_at: string
 }

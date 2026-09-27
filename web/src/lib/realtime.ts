@@ -70,6 +70,8 @@ function keysFor(orgId: string, m: Message): QueryKey[] {
         alert_channel: [['alert-channels', orgId], ['alerts', orgId]],
         alert: [['alerts', orgId], ['alert-channels', orgId]],
         repair_rule: [['repair-rules', orgId], ['incidents', orgId]],
+        integration: [['integrations', orgId], ['connections', orgId]],
+        connection: [['connections', orgId], ['integrations', orgId]],
       }
       return keys.concat(map[area] ?? [])
     }

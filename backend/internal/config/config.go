@@ -52,6 +52,10 @@ type Config struct {
 	SMTPUsername string
 	SMTPPassword string
 	SMTPFrom     string
+
+	// Connections: the OAuth callback URL organizations register in their OAuth
+	// apps. Defaults to DASHBOARD_URL + /api/v1/connect/callback (IIS routes /api to the API).
+	ConnectRedirectURI string
 }
 
 // Load reads configuration from the environment, after loading an env file:
@@ -110,6 +114,7 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("INCIDENT_AUTO_RESOLVE_AFTER: %w", err)
 	}
 	c.DashboardURL = strings.TrimRight(get("DASHBOARD_URL", c.IngestBaseURL), "/")
+	c.ConnectRedirectURI = get("CONNECT_REDIRECT_URI", c.DashboardURL+"/api/v1/connect/callback")
 	c.SMTPHost, c.SMTPUsername, c.SMTPPassword, c.SMTPFrom = os.Getenv("SMTP_HOST"), os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"), os.Getenv("SMTP_FROM")
 	if c.SMTPPort, err = strconv.Atoi(get("SMTP_PORT", "587")); err != nil {
 		return c, fmt.Errorf("SMTP_PORT: %w", err)

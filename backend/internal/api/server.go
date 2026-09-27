@@ -17,6 +17,7 @@ import (
 
 	"relaya/internal/alerts"
 	"relaya/internal/auth"
+	"relaya/internal/connect"
 	"relaya/internal/delivery"
 	"relaya/internal/httpx"
 	"relaya/internal/ratelimit"
@@ -47,6 +48,10 @@ type Server struct {
 	AlertSender *alerts.Sender
 	// Public status page data (nil = endpoint off).
 	Status *status.Service
+	// Connections: OAuth/login flows and token storage (nil = off).
+	Connect *connect.Service
+	// Public dashboard URL, for Connect links and the pages users return to.
+	DashboardURL string
 	// Rate limits; nil fields are unlimited (tests).
 	Limits            Limits
 	TrustProxyHeaders bool // for client IPs behind our own proxy
@@ -59,6 +64,7 @@ type Limits struct {
 	LoginEmail *ratelimit.Limiter // failed sign-ins per account
 	SignupIP   *ratelimit.Limiter // sign-ups per IP
 	Caller     *ratelimit.Limiter // authenticated requests per user or API key
+	ConnectIP  *ratelimit.Limiter // public Connect page requests per IP
 }
 
 // limitCaller rate-limits authenticated requests per user or API key.
@@ -95,6 +101,13 @@ func (s *Server) Routes() http.Handler {
 	public.Handle("POST /v1/auth/login", httpx.HandlerFunc(s.login))
 	// Authenticates with its first message, so it sits outside the auth middleware.
 	public.HandleFunc("GET /v1/orgs/{org}/stream", s.stream)
+	if s.Connect != nil {
+		// The Connect page's end users have no Relaya login: the link token is the credential.
+		public.Handle("GET /v1/connect/sessions/{token}", httpx.HandlerFunc(s.getConnectSession))
+		public.Handle("POST /v1/connect/sessions/{token}/authorize", httpx.HandlerFunc(s.authorizeConnectSession))
+		public.Handle("POST /v1/connect/sessions/{token}/login", httpx.HandlerFunc(s.loginConnectSession))
+		public.Handle("GET /v1/connect/callback", httpx.HandlerFunc(s.connectCallback))
+	}
 
 	private := http.NewServeMux()
 	h := func(pattern string, fn httpx.HandlerFunc) { private.Handle(pattern, fn) }
@@ -167,6 +180,20 @@ func (s *Server) Routes() http.Handler {
 	h("GET /v1/orgs/{org}/incidents/{incident}/repair-suggestion", s.repairSuggestion)
 
 	h("GET /v1/orgs/{org}/audit-logs", s.listAuditLogs)
+
+	if s.Connect != nil {
+		h("GET /v1/connect/providers", s.listConnectProviders)
+		h("GET /v1/orgs/{org}/integrations", s.listIntegrations)
+		h("POST /v1/orgs/{org}/integrations", s.createIntegration)
+		h("PATCH /v1/orgs/{org}/integrations/{integration}", s.updateIntegration)
+		h("DELETE /v1/orgs/{org}/integrations/{integration}", s.deleteIntegration)
+		h("GET /v1/orgs/{org}/connections", s.listConnections)
+		h("GET /v1/orgs/{org}/connections/{connection}", s.getConnection)
+		h("DELETE /v1/orgs/{org}/connections/{connection}", s.deleteConnection)
+		h("POST /v1/orgs/{org}/connections/{connection}/refresh", s.refreshConnection)
+		h("GET /v1/orgs/{org}/connections/{connection}/token", s.connectionToken)
+		h("POST /v1/orgs/{org}/connect-sessions", s.createConnectSession)
+	}
 
 	public.Handle("/", s.Auth.Middleware(s.limitCaller(private)))
 	return public

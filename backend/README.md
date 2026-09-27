@@ -219,6 +219,8 @@ Channels (Settings → Alerts) get a message when something needs a human. Each 
 | `destination_failing` | A destination fails 3 attempts in a row (once per outage) |
 | `destination_recovered` | The next successful attempt after a failing alert |
 | `signature_failures` | A webhook rejects an event for a bad signature (at most once an hour per webhook) |
+| `connection_broken` | A connection's provider refuses to renew access (revoked, uninstalled, password changed) |
+| `connection_recovered` | A broken connection works again (the user reconnected, or a manual refresh succeeded) |
 
 Channel types:
 - **Slack**: an Incoming Webhook URL (`https://hooks.slack.com/…`), stored encrypted.
@@ -235,6 +237,33 @@ Alerts are queued in the same transaction as the change that caused them and sen
 | `PATCH …/alert-channels/{channel}` `{"name", "events", "enabled"}`, `DELETE …` | admin |
 | `POST …/alert-channels/{channel}/test` (sends now, returns `{ok, error}`) | admin |
 | `GET /v1/orgs/{org}/alerts` (last 100) | member |
+
+## Connections
+
+Your users connect their accounts at other apps; Relaya runs the sign-in, stores the tokens encrypted (org data key) and keeps them fresh.
+
+Providers (`internal/connect/catalog.go`): `zoho` (OAuth2; follows the user's data centre from the callback's `accounts-server`, Zoho hosts only), `hubspot` (OAuth2), `google` (OAuth2 + PKCE, offline access), `shiprocket` (API-user login; the token is renewed by logging in again before its 10 days run out).
+
+Flow:
+1. An admin adds an **integration**: the provider plus the org's own OAuth client (Zoho/HubSpot/Google), registered with the redirect URI `CONNECT_REDIRECT_URI` (shown in the dashboard).
+2. The org's backend creates a **Connect link** for one of its users (`end_user_id` = its own ID for them). Links work once, for 30 minutes.
+3. The user opens `/connect/{token}`, signs in at the provider (or enters their Shiprocket API login), and lands on the org's `return_url` with `?status=connected&connection_id=…&end_user_id=…`, or on Relaya's result page.
+4. The org's backend calls `GET …/connections/{connection}/token` before calling the provider; Relaya renews the token first when it's about to expire.
+
+The worker renews tokens expiring within 10 minutes. Temporary failures (timeouts, 5xx, rate limits) are retried with a backoff of one minute per failure (max 10). Permanent ones (`invalid_grant`, revoked, wrong login) mark the connection **broken** and send `connection_broken`; connecting the same `end_user_id` again repairs it.
+
+| Method & path | Min role |
+|---|---|
+| `GET /v1/connect/providers` (catalog + redirect URI) | any signed-in caller |
+| `GET /v1/orgs/{org}/integrations` | member |
+| `POST /v1/orgs/{org}/integrations` `{"provider", "key", "name", "client_id", "client_secret", "scopes"}` | admin |
+| `PATCH …/integrations/{integration}`, `DELETE …` (deletes its connections) | admin |
+| `POST /v1/orgs/{org}/connect-sessions` `{"integration" (key or ID), "end_user_id", "return_url"}` → `{url, expires_at}` | admin |
+| `GET /v1/orgs/{org}/connections` (`?integration=`, `?end_user_id=`, `?status=`), `GET …/connections/{connection}` | member |
+| `GET …/connections/{connection}/token` → `{access_token, token_type, expires_at, api_base}`; 409 when broken | admin |
+| `POST …/connections/{connection}/refresh` (renew now; returns the connection and any error), `DELETE …` | admin |
+
+Public, rate-limited per IP (the link token is the credential): `GET /v1/connect/sessions/{token}`, `POST …/authorize` (→ provider URL), `POST …/login` (login providers), `GET /v1/connect/callback` (OAuth redirect URI; always redirects).
 
 ## Realtime (WebSocket)
 

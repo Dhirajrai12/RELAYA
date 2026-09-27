@@ -20,11 +20,14 @@ const (
 	DestinationFailing   = "destination_failing"
 	DestinationRecovered = "destination_recovered"
 	SignatureFailures    = "signature_failures"
+	ConnectionBroken     = "connection_broken"
+	ConnectionRecovered  = "connection_recovered"
 	Test                 = "test" // always delivered to the channel being tested
 )
 
 // Kinds lists the subscribable kinds, in display order.
-var Kinds = []string{IncidentOpened, IncidentResolved, DestinationFailing, DestinationRecovered, SignatureFailures}
+var Kinds = []string{IncidentOpened, IncidentResolved, DestinationFailing, DestinationRecovered, SignatureFailures,
+	ConnectionBroken, ConnectionRecovered}
 
 // FailingAfter is how many consecutive failed attempts mark a destination failing.
 const FailingAfter = 3
@@ -152,6 +155,25 @@ func SignatureFailuresAlert(webhook string) Alert {
 			"Usually the signing secret in Relaya doesn't match the provider's; it can also mean someone is sending forged requests.\n" +
 			"You'll get at most one of these per webhook per hour.",
 		Link: "/events?status=rejected",
+	}
+}
+
+func ConnectionBrokenAlert(integration, endUser, reason string) Alert {
+	return Alert{
+		Kind:  ConnectionBroken,
+		Title: fmt.Sprintf("%s connection for %s is broken", integration, endUser),
+		Body: fmt.Sprintf("Relaya could not renew its access: %s\n"+
+			"Calls with this connection fail until the user connects again. Send them a new Connect link (Connections page or API).", orDash(reason)),
+		Link: "/connections",
+	}
+}
+
+func ConnectionRecoveredAlert(integration, endUser string) Alert {
+	return Alert{
+		Kind:  ConnectionRecovered,
+		Title: fmt.Sprintf("%s connection for %s works again", integration, endUser),
+		Body:  "The connection has fresh access and is being kept up to date again.",
+		Link:  "/connections",
 	}
 }
 
