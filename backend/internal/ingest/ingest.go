@@ -112,7 +112,7 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	ev := eventRow{
+	ev := Event{
 		OrgID:       wh.OrgID,
 		ProjectID:   wh.ProjectID,
 		WebhookID:   wh.ID,
@@ -127,7 +127,7 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request) error {
 		ReceivedAt:  now,
 	}
 
-	id, duplicate, err := h.store(ctx, ev, accepted)
+	id, duplicate, err := Store(ctx, h.Pool, ev, accepted)
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,8 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-type eventRow struct {
+// Event is one stored event: from a webhook, or produced by a sync.
+type Event struct {
 	OrgID, ProjectID, WebhookID string
 	DedupKey, Type, Status      string
 	Signature, ContentType      string
@@ -151,61 +152,67 @@ type eventRow struct {
 	ReceivedAt                  time.Time
 }
 
-// store writes the event. Accepted events are deduplicated per webhook; a
-// duplicate returns the original event's ID and stores nothing new. Rejected
-// events skip dedup so a forged request cannot claim a real delivery's key.
-func (h *Handler) store(ctx context.Context, ev eventRow, dedup bool) (id string, duplicate bool, err error) {
-	err = pgx.BeginFunc(ctx, h.Pool, func(tx pgx.Tx) error {
-		if dedup {
-			var inserted bool
-			err := tx.QueryRow(ctx, `
-				INSERT INTO event_dedup (webhook_id, dedup_key, event_id, received_at)
-				VALUES ($1, $2, gen_random_uuid(), $3)
-				ON CONFLICT (webhook_id, dedup_key)
-				DO UPDATE SET duplicates = event_dedup.duplicates + 1
-				RETURNING event_id, (xmax = 0)`,
-				ev.WebhookID, ev.DedupKey, ev.ReceivedAt).Scan(&id, &inserted)
-			if err != nil {
-				return err
-			}
-			if !inserted {
-				duplicate = true
-				return nil
-			}
-		}
-		err := tx.QueryRow(ctx, `
-			INSERT INTO events (id, org_id, project_id, webhook_id, dedup_key, type, status, signature,
-			                    content_type, headers, payload, payload_size, source_ip, received_at, contract_status)
-			VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-			RETURNING id`,
-			nullIfEmpty(id), ev.OrgID, ev.ProjectID, ev.WebhookID, ev.DedupKey, ev.Type, ev.Status, ev.Signature,
-			ev.ContentType, ev.Headers, ev.Payload, len(ev.Payload), ev.SourceIP, ev.ReceivedAt, contractStatus(ev, dedup)).Scan(&id)
-		if err != nil {
-			return err
-		}
-		if err := realtime.Notify(ctx, tx, realtime.Message{
-			Type: "event", OrgID: ev.OrgID, WebhookID: ev.WebhookID, EventID: id, Status: ev.Status,
-		}); err != nil {
-			return err
-		}
-		if !dedup {
-			// Rejected events are evidence only: never forwarded or checked, but alerted
-			// (at most once per webhook per hour).
-			return alertSignatureFailure(ctx, tx, ev.WebhookID)
-		}
-		if contractStatus(ev, dedup) == "pending" {
-			if err := enqueueContractCheck(ctx, tx, id, ev); err != nil {
-				return err
-			}
-		}
-		return enqueueDeliveries(ctx, tx, id, ev)
+// Store writes the event, queues its deliveries and contract check. Accepted
+// events are deduplicated per webhook; a duplicate returns the original event's
+// ID and stores nothing new. Rejected events skip dedup so a forged request
+// cannot claim a real delivery's key.
+func Store(ctx context.Context, pool *pgxpool.Pool, ev Event, dedup bool) (id string, duplicate bool, err error) {
+	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		id, duplicate, err = StoreTx(ctx, tx, ev, dedup)
+		return err
 	})
 	return id, duplicate, err
 }
 
+// StoreTx is Store inside the caller's transaction.
+func StoreTx(ctx context.Context, tx pgx.Tx, ev Event, dedup bool) (id string, duplicate bool, err error) {
+	if dedup {
+		var inserted bool
+		err := tx.QueryRow(ctx, `
+			INSERT INTO event_dedup (webhook_id, dedup_key, event_id, received_at)
+			VALUES ($1, $2, gen_random_uuid(), $3)
+			ON CONFLICT (webhook_id, dedup_key)
+			DO UPDATE SET duplicates = event_dedup.duplicates + 1
+			RETURNING event_id, (xmax = 0)`,
+			ev.WebhookID, ev.DedupKey, ev.ReceivedAt).Scan(&id, &inserted)
+		if err != nil {
+			return "", false, err
+		}
+		if !inserted {
+			return id, true, nil
+		}
+	}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO events (id, org_id, project_id, webhook_id, dedup_key, type, status, signature,
+		                    content_type, headers, payload, payload_size, source_ip, received_at, contract_status)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		RETURNING id`,
+		nullIfEmpty(id), ev.OrgID, ev.ProjectID, ev.WebhookID, ev.DedupKey, ev.Type, ev.Status, ev.Signature,
+		ev.ContentType, ev.Headers, ev.Payload, len(ev.Payload), ev.SourceIP, ev.ReceivedAt, contractStatus(ev, dedup)).Scan(&id)
+	if err != nil {
+		return "", false, err
+	}
+	if err := realtime.Notify(ctx, tx, realtime.Message{
+		Type: "event", OrgID: ev.OrgID, WebhookID: ev.WebhookID, EventID: id, Status: ev.Status,
+	}); err != nil {
+		return "", false, err
+	}
+	if !dedup {
+		// Rejected events are evidence only: never forwarded or checked, but alerted
+		// (at most once per webhook per hour).
+		return id, false, alertSignatureFailure(ctx, tx, ev.WebhookID)
+	}
+	if contractStatus(ev, dedup) == "pending" {
+		if err := enqueueContractCheck(ctx, tx, id, ev); err != nil {
+			return "", false, err
+		}
+	}
+	return id, false, enqueueDeliveries(ctx, tx, id, ev)
+}
+
 // enqueueDeliveries creates one delivery job per enabled destination, in the
 // same transaction as the event, and wakes the workers once it commits.
-func enqueueDeliveries(ctx context.Context, tx pgx.Tx, eventID string, ev eventRow) error {
+func enqueueDeliveries(ctx context.Context, tx pgx.Tx, eventID string, ev Event) error {
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO deliveries (org_id, event_id, event_received_at, webhook_id, destination_id)
 		SELECT org_id, $1, $2, webhook_id, id FROM destinations
@@ -330,7 +337,7 @@ func alertSignatureFailure(ctx context.Context, tx pgx.Tx, webhookID string) err
 
 // contractStatus is "pending" for accepted events that can be checked against a
 // contract (a JSON object with an event type), else "none".
-func contractStatus(ev eventRow, accepted bool) string {
+func contractStatus(ev Event, accepted bool) string {
 	body := bytes.TrimSpace(ev.Payload)
 	if !accepted || ev.Type == "" || len(body) == 0 || body[0] != '{' {
 		return "none"
@@ -340,7 +347,7 @@ func contractStatus(ev eventRow, accepted bool) string {
 
 // enqueueContractCheck queues the event for the contract checker (in the
 // worker), so learning and checking never slow down ingest.
-func enqueueContractCheck(ctx context.Context, tx pgx.Tx, eventID string, ev eventRow) error {
+func enqueueContractCheck(ctx context.Context, tx pgx.Tx, eventID string, ev Event) error {
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO contract_queue (event_id, event_received_at, org_id, webhook_id, event_type)
 		VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`, eventID, ev.ReceivedAt, ev.OrgID, ev.WebhookID, ev.Type); err != nil {

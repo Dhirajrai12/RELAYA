@@ -318,6 +318,8 @@ export type AlertKind =
   | 'signature_failures'
   | 'connection_broken'
   | 'connection_recovered'
+  | 'sync_failing'
+  | 'sync_recovered'
 export type AlertChannelType = 'slack' | 'email' | 'webhook'
 
 export interface AlertChannel {
@@ -501,4 +503,63 @@ export interface ProxyCall {
   duration_ms: number
   error: string
   created_at: string
+}
+
+// ---- syncs ----------------------------------------------------------------------
+
+export interface SyncField {
+  key: string
+  label: string
+  help?: string
+  placeholder?: string
+  required: boolean
+  options?: string[]
+  default?: string
+}
+
+export interface SyncModel {
+  key: string
+  provider: string
+  name: string
+  description: string
+  fields: SyncField[]
+  incremental: boolean
+  verified: boolean
+}
+
+export interface Sync {
+  id: string
+  connection_id: string
+  end_user_id: string
+  integration_name: string
+  provider: string
+  webhook_id: string
+  webhook_name: string
+  model: string
+  model_name: string
+  config: Record<string, string>
+  interval_minutes: number
+  enabled: boolean
+  emit_existing: boolean
+  baseline_done: boolean
+  running: boolean
+  next_run_at: string
+  last_run_at: string | null
+  last_status: 'never' | 'ok' | 'error'
+  last_error: string
+  consecutive_failures: number
+  records: number
+  events: number
+  created_at: string
+}
+
+export interface SyncRun {
+  id: number
+  started_at: string
+  finished_at: string | null
+  status: 'running' | 'ok' | 'error'
+  fetched: number
+  created: number
+  updated: number
+  error: string
 }

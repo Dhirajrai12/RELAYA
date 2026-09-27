@@ -272,6 +272,32 @@ The worker renews tokens expiring within 10 minutes. Temporary failures (timeout
 - **Errors from Relaya itself** (connection broken 409, host not allowed 400, provider unreachable 502) carry `Relaya-Proxy-Error: true`; everything else is the provider's own answer.
 - **Log**: `GET /v1/orgs/{org}/proxy-calls[?connection=]` (member): method, host, path, status, attempts and duration of the last 100 calls; no query strings or bodies; kept 30 days.
 
+### Syncs
+
+A sync reads a connection's data on a schedule (every 5 minutes to once a day) and turns new and changed records into events such as `zoho.lead.created` or `google.sheet_row.updated`. They are stored on a webhook, so they go through the normal path: destinations, retries, contracts, incidents, replay. This is also how apps without webhooks become event sources.
+
+| Model | Reads | Change detection |
+|---|---|---|
+| `hubspot.crm_objects` | contacts, companies or deals (search API, by last-modified time) | incremental |
+| `zoho.crm_records` | any CRM module (v2 Get Records, `If-Modified-Since`, by `Modified_Time`) | incremental |
+| `google.sheet_rows` | a sheet or range; the first row is the column names; rows keyed by row number or a key column | full look each run (10,000 rows) |
+| `shiprocket.orders` | the latest 100-1,000 orders | full look each run |
+
+- Each record's content hash is kept (`sync_records`); only a new ID or a different hash makes an event (`record_id`, `change`, `record`, `end_user_id`, `sync_id`). Deleted records aren't reported yet.
+- The first run only remembers what exists, unless `emit_existing` is set. The baseline counts as done only once a run reaches the end.
+- A run reads at most 5,000 records; the rest continues a minute later from the saved cursor. Records and their events are written in one transaction per page.
+- API calls go through the proxy (token renewal, retries, host allowlist) and appear in the proxy call log as `sync:<id>`.
+- Three failed runs in a row send `sync_failing`, once, and the next good run sends `sync_recovered`. Runs failing because the connection is broken don't send these (the connection alerts).
+- Without a `webhook_id`, a new webhook "Sync: …" is created in the org's first project, with a random signing secret so nothing outside can post into it.
+
+| Method & path | Min role |
+|---|---|
+| `GET /v1/connect/sync-models` (models and their settings) | any signed-in caller |
+| `GET /v1/orgs/{org}/syncs`, `GET …/syncs/{sync}/runs` (last 50) | member |
+| `POST /v1/orgs/{org}/syncs` `{"connection_id", "model", "config", "interval_minutes", "webhook_id", "emit_existing"}` | admin |
+| `PATCH …/syncs/{sync}` `{"enabled", "interval_minutes", "config"}` (new config starts over), `DELETE …` | admin |
+| `POST …/syncs/{sync}/run` (run now) | admin |
+
 Public, rate-limited per IP (the link token is the credential): `GET /v1/connect/sessions/{token}`, `POST …/authorize` (→ provider URL), `POST …/login` (login providers), `GET /v1/connect/callback` (OAuth redirect URI; always redirects).
 
 ## Realtime (WebSocket)

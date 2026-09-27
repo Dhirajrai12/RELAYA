@@ -85,6 +85,12 @@ var orgRoutes = []struct {
 	{"PATCH", "/v1/orgs/{org}/connections/{connection}/proxy/{path...}", "admin"},
 	{"DELETE", "/v1/orgs/{org}/connections/{connection}/proxy/{path...}", "admin"},
 	{"GET", "/v1/orgs/{org}/proxy-calls", "member"},
+	{"GET", "/v1/orgs/{org}/syncs", "member"},
+	{"POST", "/v1/orgs/{org}/syncs", "admin"},
+	{"PATCH", "/v1/orgs/{org}/syncs/{sync}", "admin"},
+	{"DELETE", "/v1/orgs/{org}/syncs/{sync}", "admin"},
+	{"POST", "/v1/orgs/{org}/syncs/{sync}/run", "admin"},
+	{"GET", "/v1/orgs/{org}/syncs/{sync}/runs", "member"},
 }
 
 func TestEveryOrgRouteHasAPolicy(t *testing.T) {
@@ -158,12 +164,14 @@ func TestPermissions(t *testing.T) {
 		VALUES ($1, $2, 'u1', '\x00') RETURNING id`, orgID, integration).Scan(&connection); err != nil {
 		t.Fatal(err)
 	}
+	syncID := e.call("POST", base+"/syncs", owner, map[string]any{"connection_id": connection, "model": "hubspot.crm_objects",
+		"config": map[string]string{"object": "contacts"}, "webhook_id": wh["id"]}, 201)["id"].(string)
 
 	ids := map[string]string{
 		"{org}": orgID, "{user}": adminID, "{key}": adminKey["api_key"].(map[string]any)["id"].(string), "{project}": proj,
 		"{webhook}": wh["id"].(string), "{event}": eventID, "{destination}": dest, "{delivery}": delivery,
 		"{contract}": contract, "{incident}": incident, "{channel}": channel, "{rule}": rule,
-		"{integration}": integration, "{connection}": connection, "{path...}": "v1/anything",
+		"{integration}": integration, "{connection}": connection, "{path...}": "v1/anything", "{sync}": syncID,
 	}
 	status := func(method, path, token string) (int, string) {
 		req, _ := http.NewRequest(method, e.api.URL+path, bytes.NewBufferString("{}"))

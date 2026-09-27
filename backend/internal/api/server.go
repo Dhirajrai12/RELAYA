@@ -201,6 +201,13 @@ func (s *Server) Routes() http.Handler {
 		h("PATCH /v1/orgs/{org}/connections/{connection}/proxy/{path...}", s.proxyConnection)
 		h("DELETE /v1/orgs/{org}/connections/{connection}/proxy/{path...}", s.proxyConnection)
 		h("GET /v1/orgs/{org}/proxy-calls", s.listProxyCalls)
+		h("GET /v1/connect/sync-models", s.listSyncModels)
+		h("GET /v1/orgs/{org}/syncs", s.listSyncs)
+		h("POST /v1/orgs/{org}/syncs", s.createSync)
+		h("PATCH /v1/orgs/{org}/syncs/{sync}", s.updateSync)
+		h("DELETE /v1/orgs/{org}/syncs/{sync}", s.deleteSync)
+		h("POST /v1/orgs/{org}/syncs/{sync}/run", s.runSync)
+		h("GET /v1/orgs/{org}/syncs/{sync}/runs", s.listSyncRuns)
 	}
 
 	public.Handle("/", s.Auth.Middleware(s.limitCaller(private)))

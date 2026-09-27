@@ -32,6 +32,7 @@ import {
 import { useCanManage } from '@/lib/role'
 import { cn } from '@/lib/utils'
 import type { Connection, ConnectProvider, Integration } from '@/lib/types'
+import { SyncsCard } from '@/pages/syncs-card'
 
 /** How to create the OAuth app (or API login) at each provider. `{callback}` is replaced. */
 const setupSteps: Record<string, string[]> = {
@@ -111,6 +112,7 @@ export function ConnectionsPage() {
             ))}
           </ul>
           <ConnectionsCard onReconnect={(c) => setLinkFor({ integration: c.integration_key, endUser: c.end_user_id })} onTry={setTryFor} />
+          <SyncsCard />
           <RecentCallsCard />
           <UsageCard />
         </>

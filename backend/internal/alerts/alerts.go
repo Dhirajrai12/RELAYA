@@ -22,12 +22,14 @@ const (
 	SignatureFailures    = "signature_failures"
 	ConnectionBroken     = "connection_broken"
 	ConnectionRecovered  = "connection_recovered"
+	SyncFailing          = "sync_failing"
+	SyncRecovered        = "sync_recovered"
 	Test                 = "test" // always delivered to the channel being tested
 )
 
 // Kinds lists the subscribable kinds, in display order.
 var Kinds = []string{IncidentOpened, IncidentResolved, DestinationFailing, DestinationRecovered, SignatureFailures,
-	ConnectionBroken, ConnectionRecovered}
+	ConnectionBroken, ConnectionRecovered, SyncFailing, SyncRecovered}
 
 // FailingAfter is how many consecutive failed attempts mark a destination failing.
 const FailingAfter = 3
@@ -173,6 +175,25 @@ func ConnectionRecoveredAlert(integration, endUser string) Alert {
 		Kind:  ConnectionRecovered,
 		Title: fmt.Sprintf("%s connection for %s works again", integration, endUser),
 		Body:  "The connection has fresh access and is being kept up to date again.",
+		Link:  "/connections",
+	}
+}
+
+func SyncFailingAlert(name, reason string, runs int) Alert {
+	return Alert{
+		Kind:  SyncFailing,
+		Title: fmt.Sprintf("Sync %s is failing", name),
+		Body: fmt.Sprintf("The last %d runs failed. Last error: %s\n"+
+			"Changes at the provider aren't reaching you until it recovers; nothing is skipped, the next good run catches up.", runs, orDash(reason)),
+		Link: "/connections",
+	}
+}
+
+func SyncRecoveredAlert(name string) Alert {
+	return Alert{
+		Kind:  SyncRecovered,
+		Title: fmt.Sprintf("Sync %s works again", name),
+		Body:  "The last run succeeded and caught up with the changes made meanwhile.",
 		Link:  "/connections",
 	}
 }

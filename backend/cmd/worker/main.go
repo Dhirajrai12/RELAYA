@@ -18,6 +18,7 @@ import (
 	"relaya/internal/retention"
 	"relaya/internal/server"
 	"relaya/internal/status"
+	"relaya/internal/syncs"
 	"relaya/internal/vault"
 )
 
@@ -61,7 +62,9 @@ func main() {
 		SMTP: alerts.SMTP{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.SMTPFrom},
 	}
 	go alertSender.Run(ctx)
-	go (&connect.Service{Pool: pool, Vault: vault.NewPGVault(pool, wrapper), Client: connect.NewClient(), RedirectURI: cfg.ConnectRedirectURI}).RunRefresher(ctx)
+	connections := &connect.Service{Pool: pool, Vault: vault.NewPGVault(pool, wrapper), Client: connect.NewClient(), RedirectURI: cfg.ConnectRedirectURI}
+	go connections.RunRefresher(ctx)
+	go (&syncs.Runner{Pool: pool, Connect: connections, HTTP: connect.NewProxyClient()}).Run(ctx)
 	go retention.Run(ctx, pool, retention.Policy{Events: cfg.EventRetention, Alerts: cfg.AlertRetention}, time.Hour)
 	go (&status.Prober{Pool: pool, APIURL: status.LocalURL(cfg.APIAddr), IngestURL: status.LocalURL(cfg.IngestAddr), HTTP: &http.Client{Timeout: 5 * time.Second}}).Run(ctx)
 

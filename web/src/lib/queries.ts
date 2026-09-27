@@ -37,6 +37,9 @@ import type {
   ConnectProviders,
   Integration,
   ProxyCall,
+  Sync,
+  SyncModel,
+  SyncRun,
 } from './types'
 
 /** The selected org ID. Only call inside pages rendered under RequireOrg. */
@@ -803,5 +806,88 @@ export function useProxyCalls() {
     queryKey: ['proxy-calls', orgId],
     queryFn: () => get<List<ProxyCall>>(orgPath(orgId, '/proxy-calls')),
     refetchInterval: interval,
+  })
+}
+
+// ---- syncs ----------------------------------------------------------------------
+
+export function useSyncModels() {
+  return useQuery({
+    queryKey: ['sync-models'],
+    queryFn: () => get<List<SyncModel>>('/connect/sync-models'),
+    staleTime: Infinity,
+  })
+}
+
+export function useSyncs() {
+  const orgId = useOrgId()
+  // Runs happen in the worker without an audited change, so poll while the page is open.
+  return useQuery({
+    queryKey: ['syncs', orgId],
+    queryFn: () => get<List<Sync>>(orgPath(orgId, '/syncs')),
+    refetchInterval: 10_000,
+  })
+}
+
+export function useSyncRuns(id: string) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['sync-runs', orgId, id],
+    queryFn: () => get<List<SyncRun>>(orgPath(orgId, `/syncs/${id}/runs`)),
+    refetchInterval: 10_000,
+  })
+}
+
+export interface SyncInput {
+  connection_id: string
+  model: string
+  config: Record<string, string>
+  interval_minutes: number
+  webhook_id?: string
+  emit_existing: boolean
+}
+
+export function useCreateSync() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: SyncInput) => post<Sync>(orgPath(orgId, '/syncs'), v),
+    onSuccess: (r) => {
+      upsertInList(qc, ['syncs', orgId], r)
+      qc.invalidateQueries({ queryKey: ['webhooks', orgId] })
+    },
+  })
+}
+
+export function useUpdateSync() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...v }: { id: string; enabled?: boolean; interval_minutes?: number; config?: Record<string, string> }) =>
+      patch<Sync>(orgPath(orgId, `/syncs/${id}`), v),
+    onSuccess: (r) => upsertInList(qc, ['syncs', orgId], r),
+  })
+}
+
+export function useRunSync() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => post<Sync>(orgPath(orgId, `/syncs/${id}/run`)),
+    onSuccess: (r) => {
+      upsertInList(qc, ['syncs', orgId], r)
+      // The worker picks it up within seconds.
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['syncs', orgId] }), 3000)
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['sync-runs', orgId, r.id] }), 3000)
+    },
+  })
+}
+
+export function useDeleteSync() {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => del(orgPath(orgId, `/syncs/${id}`)),
+    onSuccess: (_, id) => removeFromList(qc, ['syncs', orgId], id),
   })
 }

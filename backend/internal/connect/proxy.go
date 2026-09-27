@@ -153,7 +153,7 @@ func retryable(status int) bool {
 		status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
 }
 
-// backoff is the provider's Retry-After (seconds, capped at 5s) or 300ms, 600msÃ¢â‚¬Â¦
+// backoff is the provider's Retry-After (seconds, capped at 5s) or 300ms, 600ms…
 func backoff(attempt int, retryAfter string) time.Duration {
 	if secs, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && secs >= 0 {
 		return min(time.Duration(secs)*time.Second, 5*time.Second)
