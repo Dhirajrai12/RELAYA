@@ -50,6 +50,12 @@ function Message({ icon, tone, title, children }: { icon: ReactNode; tone: 'ok' 
   )
 }
 
+/** "?popup=1" when the page runs in connect.js's popup, so the result page closes itself. */
+function usePopupQuery() {
+  const [q] = useSearchParams()
+  return q.get('mode') === 'popup' ? '?popup=1' : ''
+}
+
 export function ConnectPage() {
   const { token = '' } = useParams()
   const session = useQuery({
@@ -116,13 +122,14 @@ function Intro({ s }: { s: ConnectSessionInfo }) {
 }
 
 function OAuthStart({ token, s }: { token: string; s: ConnectSessionInfo }) {
+  const popup = usePopupQuery()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   async function go() {
     setPending(true)
     setError('')
     try {
-      const r = await post<{ redirect_url: string }>(`/connect/sessions/${encodeURIComponent(token)}/authorize`)
+      const r = await post<{ redirect_url: string }>(`/connect/sessions/${encodeURIComponent(token)}/authorize${popup}`)
       window.location.assign(r.redirect_url)
     } catch (err) {
       setError(errorMessage(err))
@@ -146,6 +153,7 @@ function OAuthStart({ token, s }: { token: string; s: ConnectSessionInfo }) {
 }
 
 function LoginForm({ token, s }: { token: string; s: ConnectSessionInfo }) {
+  const popup = usePopupQuery()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
@@ -157,7 +165,10 @@ function LoginForm({ token, s }: { token: string; s: ConnectSessionInfo }) {
     setPending(true)
     setError('')
     try {
-      const r = await post<{ status: string; redirect_url: string }>(`/connect/sessions/${encodeURIComponent(token)}/login`, { email: email.trim(), password })
+      const r = await post<{ status: string; redirect_url: string }>(`/connect/sessions/${encodeURIComponent(token)}/login${popup}`, {
+        email: email.trim(),
+        password,
+      })
       setPassword('')
       if (r.redirect_url) window.location.assign(r.redirect_url)
       else setDone(true)
@@ -201,11 +212,21 @@ export function ConnectResultPage() {
   const [q] = useSearchParams()
   const provider = q.get('provider') || 'your'
   const org = q.get('org') || 'the app'
-  if (q.get('status') === 'connected') {
+  const popup = q.get('popup') === '1'
+  const connected = q.get('status') === 'connected'
+  useEffect(() => {
+    // connect.js already knows (it asks Relaya); close the popup for the user.
+    if (popup && connected) {
+      const id = setTimeout(() => window.close(), 900)
+      return () => clearTimeout(id)
+    }
+  }, [popup, connected])
+
+  if (connected) {
     return (
       <Shell>
         <Message icon={<CheckCircle2Icon />} tone="ok" title="Connected">
-          Your {provider} account is connected to {org}. You can close this window.
+          Your {provider} account is connected to {org}. {popup ? 'This window closes by itself.' : 'You can close this window.'}
         </Message>
       </Shell>
     )
@@ -215,7 +236,7 @@ export function ConnectResultPage() {
       <Message icon={<TriangleAlertIcon />} tone="bad" title="Couldn’t connect">
         {q.get('error') || 'Something went wrong.'}
         <br />
-        Open your link again to retry.
+        {popup ? 'Close this window and try again.' : 'Open your link again to retry.'}
       </Message>
     </Shell>
   )

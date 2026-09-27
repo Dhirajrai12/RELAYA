@@ -7,6 +7,7 @@ import {
   LogOutIcon,
   MenuIcon,
   PlugIcon,
+  RocketIcon,
   ScrollTextIcon,
   UsersIcon,
   WebhookIcon,
@@ -32,6 +33,7 @@ import type { Org } from '@/lib/types'
 
 const nav = [
   { to: '/overview', label: 'Overview', icon: LayoutDashboardIcon },
+  { to: '/quickstart', label: 'Quickstart', icon: RocketIcon },
   { to: '/events', label: 'Events', icon: ActivityIcon },
   { to: '/incidents', label: 'Incidents', icon: ShieldAlertIcon, badge: 'incidents' as const },
   { to: '/webhooks', label: 'Webhooks', icon: WebhookIcon },

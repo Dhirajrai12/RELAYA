@@ -321,6 +321,71 @@ func TestConnectionsEndToEnd(t *testing.T) {
 	e.call("GET", base+"/connections/"+connID, tok, nil, 404)
 }
 
+// TestConnectPopupMode covers what connect.js relies on: the link's state is
+// readable from any site, shows the connection once done, and the popup's
+// result page is told to close itself.
+func TestConnectPopupMode(t *testing.T) {
+	fake := newFakeProvider(t)
+	defer connect.Override(&connect.Provider{Key: "fakeoauth", Name: "FakeOAuth", Auth: connect.OAuth2,
+		AuthURL: fake.srv.URL + "/authorize", TokenURL: fake.srv.URL + "/token", PKCE: true})()
+	e := setup(t)
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+	owner := e.call("POST", "/v1/auth/signup", "", map[string]any{"email": "pop@example.com", "password": "correct-horse-1", "org_name": "Popup Co"}, 201)
+	tok := owner["token"].(string)
+	orgID := e.call("GET", "/v1/me", tok, nil, 200)["orgs"].([]any)[0].(map[string]any)["id"].(string)
+	base := "/v1/orgs/" + orgID
+	e.call("POST", base+"/integrations", tok, map[string]any{"provider": "fakeoauth", "client_id": "cid-1", "client_secret": "client-secret-1"}, 201)
+	link := e.call("POST", base+"/connect-sessions", tok, map[string]any{"integration": "fakeoauth", "end_user_id": "u-9"}, 201)["url"].(string)
+	pub := "/v1/connect/sessions/" + strings.TrimPrefix(link, "https://relaya.test/connect/")
+
+	// Readable cross-site, errors included.
+	get := func(path string) (*http.Response, map[string]any) {
+		req, _ := http.NewRequest("GET", e.api.URL+path, nil)
+		req.Header.Set("Origin", "https://customer-app.example")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out := map[string]any{}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp, out
+	}
+	resp, info := get(pub)
+	if resp.Header.Get("Access-Control-Allow-Origin") != "*" || info["status"] != "open" || info["started"] != false || info["connection_id"] != nil {
+		t.Fatalf("before: %v %v", resp.Header, info)
+	}
+	if resp, _ := get("/v1/connect/sessions/cs_nope"); resp.StatusCode != 404 || resp.Header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("404 not readable cross-site: %d %v", resp.StatusCode, resp.Header)
+	}
+	// Other API routes stay closed to other sites.
+	if resp, _ := get(base + "/connections"); resp.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("private API readable cross-site")
+	}
+
+	authz := e.call("POST", pub+"/authorize?popup=1", "", nil, 200)
+	au, _ := url.Parse(authz["redirect_url"].(string))
+	fake.challenge = au.Query().Get("code_challenge")
+	if _, info = get(pub); info["started"] != true {
+		t.Fatalf("not started: %v", info)
+	}
+
+	r, err := noRedirect.Get(e.api.URL + "/v1/connect/callback?" + url.Values{"state": {au.Query().Get("state")}, "code": {"good-code"}}.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	loc, _ := url.Parse(r.Header.Get("Location"))
+	connID := loc.Query().Get("connection_id")
+	if loc.Path != "/connect/result" || loc.Query().Get("popup") != "1" || loc.Query().Get("status") != "connected" || connID == "" {
+		t.Fatalf("result page: %s", loc)
+	}
+	if _, info = get(pub); info["status"] != "completed" || info["connection_id"] != connID || info["end_user_id"] != "u-9" {
+		t.Fatalf("after: %v", info)
+	}
+}
+
 func countAlerts(t *testing.T, e *env, orgID, kind string) int {
 	t.Helper()
 	var n int

@@ -28,12 +28,13 @@ type connectSession struct {
 	expiresAt                                                                  time.Time
 	completedAt                                                                *time.Time
 	connectionID                                                               *string
+	popup                                                                      bool
 }
 
 const connectSessionSelect = `
 	SELECT s.id, s.org_id, o.name, s.integration_id, i.name, i.provider, s.end_user_id,
 	       i.client_id, coalesce(s.state, ''), s.code_verifier, s.return_url, s.error,
-	       i.client_secret_enc, i.scopes, s.expires_at, s.completed_at, s.connection_id
+	       i.client_secret_enc, i.scopes, s.expires_at, s.completed_at, s.connection_id, s.popup
 	FROM connect_sessions s
 	JOIN integrations i ON i.id = s.integration_id
 	JOIN organizations o ON o.id = s.org_id`
@@ -42,8 +43,18 @@ func scanConnectSession(row pgx.Row) (connectSession, error) {
 	var c connectSession
 	err := row.Scan(&c.id, &c.orgID, &c.orgName, &c.integrationID, &c.integrationName, &c.providerKey, &c.endUserID,
 		&c.clientID, &c.state, &c.codeVerifier, &c.returnURL, &c.errText,
-		&c.clientSecretEnc, &c.scopes, &c.expiresAt, &c.completedAt, &c.connectionID)
+		&c.clientSecretEnc, &c.scopes, &c.expiresAt, &c.completedAt, &c.connectionID, &c.popup)
 	return c, err
+}
+
+// markPopup records that the link runs in connect.js's popup (?popup=1), so
+// the result page can close itself.
+func (s *Server) markPopup(r *http.Request, c connectSession) error {
+	if r.URL.Query().Get("popup") != "1" || c.popup {
+		return nil
+	}
+	_, err := s.Pool.Exec(r.Context(), `UPDATE connect_sessions SET popup = true WHERE id = $1`, c.id)
+	return err
 }
 
 func (c connectSession) status() string {
@@ -82,6 +93,11 @@ func (s *Server) sessionByToken(r *http.Request) (connectSession, *connect.Provi
 }
 
 func (s *Server) getConnectSession(w http.ResponseWriter, r *http.Request) error {
+	// connect.js polls this from the developer's own site: readable from any
+	// origin, without credentials (the link token in the URL is the credential).
+	// Set first, so errors (404, 429) are readable too.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cache-Control", "no-store")
 	if err := s.limitConnect(r, w); err != nil {
 		return err
 	}
@@ -89,8 +105,7 @@ func (s *Server) getConnectSession(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	w.Header().Set("Cache-Control", "no-store")
-	httpx.JSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"org_name":         c.orgName,
 		"integration_name": c.integrationName,
 		"provider":         p.Key,
@@ -98,9 +113,15 @@ func (s *Server) getConnectSession(w http.ResponseWriter, r *http.Request) error
 		"auth":             p.Auth,
 		"login_label":      p.LoginLabel,
 		"status":           c.status(),
+		"started":          c.state != "", // the user went on to the provider's sign-in
 		"error":            c.errText,
 		"expires_at":       c.expiresAt,
-	})
+	}
+	if c.completedAt != nil && c.connectionID != nil {
+		out["connection_id"] = *c.connectionID
+		out["end_user_id"] = c.endUserID
+	}
+	httpx.JSON(w, http.StatusOK, out)
 	return nil
 }
 
@@ -128,6 +149,9 @@ func (s *Server) authorizeConnectSession(w http.ResponseWriter, r *http.Request)
 	}
 	if p.Auth != connect.OAuth2 {
 		return httpx.BadRequest("%s connects with a login form, not a redirect", p.Name)
+	}
+	if err := s.markPopup(r, c); err != nil {
+		return err
 	}
 	state, verifier := connect.NewState(p)
 	if _, err := s.Pool.Exec(r.Context(), `UPDATE connect_sessions SET state = $2, code_verifier = $3, error = '' WHERE id = $1`,
@@ -174,6 +198,10 @@ func (s *Server) loginConnectSession(w http.ResponseWriter, r *http.Request) err
 		}
 		return httpx.NewError(http.StatusBadGateway, "provider_unavailable", "could not reach "+p.Name+"; try again in a moment")
 	}
+	if err := s.markPopup(r, c); err != nil {
+		return err
+	}
+	c.popup = c.popup || r.URL.Query().Get("popup") == "1"
 	connID, err := s.completeConnect(r, c, cred, connect.Metadata{})
 	if err != nil {
 		return err
@@ -305,6 +333,12 @@ func (s *Server) connectResultURL(c connectSession, p *connect.Provider, status,
 	}
 	if c.orgName != "" {
 		q.Set("org", c.orgName)
+	}
+	if connID != "" {
+		q.Set("connection_id", connID)
+	}
+	if c.popup {
+		q.Set("popup", "1") // connect.js is waiting: the page closes itself
 	}
 	return s.DashboardURL + "/connect/result?" + q.Encode()
 }

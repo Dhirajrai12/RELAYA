@@ -70,7 +70,7 @@ func main() {
 		LoginEmail: ratelimit.New(10, 15*time.Minute, 10), // failed attempts only
 		SignupIP:   ratelimit.New(10, time.Hour, 10),
 		StatusIP:   ratelimit.New(120, time.Minute, 60),
-		ConnectIP:  ratelimit.New(60, time.Minute, 30),
+		ConnectIP:  ratelimit.New(120, time.Minute, 60), // connect.js polls every 2s while a popup is open
 	}
 	if cfg.APIPerMinute > 0 {
 		srv.Limits.Caller = ratelimit.New(cfg.APIPerMinute, time.Minute, max(cfg.APIPerMinute/2, 10))
