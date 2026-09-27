@@ -1,4 +1,5 @@
-import { ExternalLinkIcon, LinkIcon, PencilIcon, PlugIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { ExternalLinkIcon, LinkIcon, PencilIcon, PlugIcon, PlusIcon, RefreshCwIcon, TerminalIcon, Trash2Icon } from 'lucide-react'
 import { useState, type SubmitEvent } from 'react'
 import { toast } from 'sonner'
 
@@ -24,6 +25,7 @@ import {
   useDeleteConnection,
   useDeleteIntegration,
   useIntegrations,
+  useProxyCalls,
   useRefreshConnection,
   useUpdateIntegration,
 } from '@/lib/queries'
@@ -59,6 +61,7 @@ export function ConnectionsPage() {
   const canManage = useCanManage()
   const [editing, setEditing] = useState<Integration | 'new' | null>(null)
   const [linkFor, setLinkFor] = useState<{ integration: string; endUser: string } | null>(null)
+  const [tryFor, setTryFor] = useState<Connection | null>(null)
   const list = integrations.data?.data ?? []
 
   return (
@@ -107,7 +110,8 @@ export function ConnectionsPage() {
               <IntegrationRow key={i.id} i={i} onEdit={() => setEditing(i)} />
             ))}
           </ul>
-          <ConnectionsCard onReconnect={(c) => setLinkFor({ integration: c.integration_key, endUser: c.end_user_id })} />
+          <ConnectionsCard onReconnect={(c) => setLinkFor({ integration: c.integration_key, endUser: c.end_user_id })} onTry={setTryFor} />
+          <RecentCallsCard />
           <UsageCard />
         </>
       )}
@@ -121,6 +125,9 @@ export function ConnectionsPage() {
         <DialogContent className="sm:max-w-lg">
           {linkFor && <ConnectLinkForm key={linkFor.integration + linkFor.endUser} initial={linkFor} integrations={list} />}
         </DialogContent>
+      </Dialog>
+      <Dialog open={tryFor !== null} onOpenChange={(o) => !o && setTryFor(null)}>
+        <DialogContent className="sm:max-w-2xl">{tryFor && <TryCallForm key={tryFor.id} c={tryFor} />}</DialogContent>
       </Dialog>
     </>
   )
@@ -437,7 +444,7 @@ function ConnectLinkForm({ initial, integrations }: { initial: { integration: st
   )
 }
 
-function ConnectionsCard({ onReconnect }: { onReconnect: (c: Connection) => void }) {
+function ConnectionsCard({ onReconnect, onTry }: { onReconnect: (c: Connection) => void; onTry: (c: Connection) => void }) {
   const conns = useConnections()
   const rows = conns.data?.data ?? []
   return (
@@ -466,7 +473,7 @@ function ConnectionsCard({ onReconnect }: { onReconnect: (c: Connection) => void
               </TableHeader>
               <TableBody>
                 {rows.map((c) => (
-                  <ConnectionRow key={c.id} c={c} onReconnect={() => onReconnect(c)} />
+                  <ConnectionRow key={c.id} c={c} onReconnect={() => onReconnect(c)} onTry={() => onTry(c)} />
                 ))}
               </TableBody>
             </Table>
@@ -477,7 +484,7 @@ function ConnectionsCard({ onReconnect }: { onReconnect: (c: Connection) => void
   )
 }
 
-function ConnectionRow({ c, onReconnect }: { c: Connection; onReconnect: () => void }) {
+function ConnectionRow({ c, onReconnect, onTry }: { c: Connection; onReconnect: () => void; onTry: () => void }) {
   const canManage = useCanManage()
   const refresh = useRefreshConnection()
   const remove = useDeleteConnection()
@@ -525,6 +532,11 @@ function ConnectionRow({ c, onReconnect }: { c: Connection; onReconnect: () => v
               <LinkIcon /> <span className="hidden sm:inline">Reconnect</span>
             </Button>
           )}
+          {canManage && c.status === 'active' && (
+            <Button size="sm" variant="ghost" aria-label="Try a call" title="Try a call" onClick={onTry}>
+              <TerminalIcon />
+            </Button>
+          )}
           {canManage && (
             <Button
               size="sm"
@@ -568,20 +580,226 @@ curl -X POST ${api}/connect-sessions \\
   -H "Authorization: Bearer $RELAYA_API_KEY" \\
   -d '{"integration":"zoho","end_user_id":"customer-123","return_url":"https://yourapp.com/done"}'
 
-# 2. After they connect, get a fresh access token whenever you call the app
+# 2a. Call the app through Relaya: the user's token is added, renewed and retried for you
+curl "${api}/connections/$CONNECTION_ID/proxy/crm/v2/Leads?per_page=10" \\
+  -H "Authorization: Bearer $RELAYA_API_KEY"
+#     Another API host of the same provider: -H "Relaya-Proxy-Base-Url: https://sheets.googleapis.com"
+#     Extra headers for the provider: -H "Relaya-Proxy-X-Some-Header: value"
+
+# 2b. Or take a fresh token and call the app yourself
 curl ${api}/connections/$CONNECTION_ID/token -H "Authorization: Bearer $RELAYA_API_KEY"
 # → {"access_token":"…","api_base":"https://www.zohoapis.in","expires_at":"…"}`
   return (
     <Card className="mt-6">
       <CardHeader>
         <CardTitle>Use it from your backend</CardTitle>
-        <CardDescription>Ask Relaya for the token right before each call; it renews it when needed. Find connections by user with ?end_user_id=…</CardDescription>
+        <CardDescription>
+          Call through Relaya, or ask for the token right before each call; either way it is renewed when needed. Find connections by user with
+          ?end_user_id=…
+        </CardDescription>
       </CardHeader>
       <CardContent className="min-w-0">
         <pre className="overflow-x-auto rounded-md border bg-muted p-3 font-mono text-xs leading-relaxed">{snippet}</pre>
         <div className="mt-2 flex justify-end">
           <CopyButton value={snippet} />
         </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** Example calls that work with the default scopes, per provider. */
+const tryExamples: Record<string, { base?: string; path: string; note: string }> = {
+  google: { base: 'https://openidconnect.googleapis.com', path: '/v1/userinfo', note: 'Example: your Google profile.' },
+  hubspot: { path: '/crm/v3/objects/contacts?limit=5', note: 'Example: the first 5 contacts.' },
+  zoho: { path: '/crm/v2/users?type=CurrentUser', note: 'Example: the connected Zoho CRM user.' },
+  shiprocket: { path: '/orders?per_page=5', note: 'Example: the latest 5 orders.' },
+}
+
+const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+
+interface TryResult {
+  status: number
+  attempts: string
+  ms: number
+  relayaError: boolean
+  text: string
+}
+
+function TryCallForm({ c }: { c: Connection }) {
+  const orgId = useAuth((s) => s.orgId)
+  const token = useAuth((s) => s.token)
+  const providers = useConnectProviders()
+  const qc = useQueryClient()
+  const example = tryExamples[c.provider]
+  const storedBase = typeof c.metadata.api_base === 'string' ? c.metadata.api_base : ''
+  const apiBase = storedBase || providers.data?.data.find((p) => p.key === c.provider)?.api_base || ''
+  const [base, setBase] = useState(example?.base ?? '')
+  const [method, setMethod] = useState('GET')
+  const [path, setPath] = useState(example?.path ?? '/')
+  const [body, setBody] = useState('')
+  const [pending, setPending] = useState(false)
+  const [result, setResult] = useState<TryResult | null>(null)
+  const hasBody = method !== 'GET' && method !== 'DELETE'
+
+  async function onSubmit(e: SubmitEvent) {
+    e.preventDefault()
+    setPending(true)
+    setResult(null)
+    const started = performance.now()
+    try {
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+      if (base.trim()) headers['Relaya-Proxy-Base-Url'] = base.trim()
+      const send = hasBody && body.trim() !== ''
+      if (send) headers['Content-Type'] = 'application/json'
+      const res = await fetch(`/api/v1/orgs/${orgId}/connections/${c.id}/proxy/${path.trim().replace(/^\/+/, '')}`, {
+        method,
+        headers,
+        body: send ? body : undefined,
+      })
+      let text = await res.text()
+      try {
+        text = JSON.stringify(JSON.parse(text), null, 2)
+      } catch {
+        // not JSON: shown as is
+      }
+      if (text.length > 20_000) text = text.slice(0, 20_000) + '\n… (cut at 20 KB)'
+      setResult({
+        status: res.status,
+        attempts: res.headers.get('Relaya-Proxy-Attempts') ?? '',
+        ms: Math.round(performance.now() - started),
+        relayaError: res.headers.get('Relaya-Proxy-Error') === 'true',
+        text,
+      })
+      qc.invalidateQueries({ queryKey: ['proxy-calls', orgId] })
+      qc.invalidateQueries({ queryKey: ['connections', orgId] })
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const ok = result !== null && result.status < 300
+  return (
+    <form onSubmit={onSubmit} className="grid min-w-0 grid-cols-1 gap-4">
+      <DialogHeader>
+        <DialogTitle>Try a call</DialogTitle>
+        <DialogDescription>
+          Calls {c.integration_name} as {c.end_user_id} through Relaya; the token is added for you. {example?.note}
+        </DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-2">
+        <Label htmlFor="tc-base">Base URL</Label>
+        <Input id="tc-base" value={base} onChange={(e) => setBase(e.target.value)} placeholder={apiBase} className="font-mono text-xs" />
+        <p className="text-xs text-muted-foreground">Empty uses {apiBase || 'the provider’s API'}. Only the provider’s own API hosts are allowed.</p>
+      </div>
+      <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
+        <SimpleSelect id="tc-method" className="w-full" value={method} onChange={setMethod} options={METHODS.map((m) => ({ value: m, label: m }))} />
+        <Input aria-label="Path" value={path} onChange={(e) => setPath(e.target.value)} className="font-mono text-xs" required />
+      </div>
+      {hasBody && (
+        <textarea
+          aria-label="JSON body"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={4}
+          placeholder="JSON body"
+          className="min-w-0 rounded-md border bg-transparent px-3 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        />
+      )}
+      {result && (
+        <div className="grid min-w-0 gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge
+              variant="outline"
+              className={
+                ok
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                  : 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400'
+              }
+            >
+              HTTP {result.status}
+            </Badge>
+            <span className="text-muted-foreground">
+              {result.relayaError ? 'from Relaya: the call was not made' : `from ${c.integration_name}`} · {result.ms} ms
+              {result.attempts && result.attempts !== '1' && ` · ${result.attempts} attempts`}
+            </span>
+          </div>
+          <pre className="max-h-72 overflow-auto rounded-md border bg-muted p-3 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
+            {result.text || '(empty response)'}
+          </pre>
+        </div>
+      )}
+      <DialogFooter>
+        <Button type="submit" disabled={pending}>
+          {pending ? 'Calling…' : 'Send'}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+const callOK = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+const callBad = 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400'
+
+function RecentCallsCard() {
+  const calls = useProxyCalls()
+  const rows = calls.data?.data ?? []
+  if (!calls.isPending && !calls.error && rows.length === 0) return null
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle>Recent API calls</CardTitle>
+        <CardDescription>The last 100 calls made through connections. Query strings and bodies aren’t kept.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {calls.error ? (
+          <ErrorState error={calls.error} />
+        ) : calls.isPending ? (
+          <Skeleton className="h-24 w-full" />
+        ) : (
+          <div className="rounded-lg border">
+            <Table className="table-fixed">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="hidden w-28 sm:table-cell">When</TableHead>
+                  <TableHead>Call</TableHead>
+                  <TableHead className="w-20">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="hidden align-top text-xs whitespace-normal text-muted-foreground sm:table-cell" title={dateTime(r.created_at)}>
+                      {timeAgo(r.created_at)}
+                    </TableCell>
+                    <TableCell className="align-top whitespace-normal">
+                      <div className="truncate font-mono text-xs" title={`${r.method} ${r.host}${r.path}`}>
+                        <span className="font-semibold">{r.method}</span> {r.host}
+                        {r.path}
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        <span className="sm:hidden">{timeAgo(r.created_at)} · </span>
+                        {r.integration_name} · {r.end_user_id} · {r.duration_ms} ms{r.attempts > 1 && ` · ${r.attempts} attempts`}
+                      </div>
+                      {r.error && (
+                        <div className="mt-0.5 line-clamp-2 break-words text-xs text-red-700 dark:text-red-400" title={r.error}>
+                          {r.error}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <Badge variant="outline" className={r.status > 0 && r.status < 400 ? callOK : callBad}>
+                        {r.status || 'failed'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

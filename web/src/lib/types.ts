@@ -487,3 +487,18 @@ export interface ConnectSessionInfo {
   error: string
   expires_at: string
 }
+
+export interface ProxyCall {
+  id: number
+  connection_id: string
+  end_user_id: string
+  integration_name: string
+  method: string
+  host: string
+  path: string
+  status: number
+  attempts: number
+  duration_ms: number
+  error: string
+  created_at: string
+}

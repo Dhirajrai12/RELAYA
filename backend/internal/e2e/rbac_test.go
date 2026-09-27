@@ -79,6 +79,12 @@ var orgRoutes = []struct {
 	{"POST", "/v1/orgs/{org}/connections/{connection}/refresh", "admin"},
 	{"GET", "/v1/orgs/{org}/connections/{connection}/token", "admin"}, // hands out the user's access token
 	{"POST", "/v1/orgs/{org}/connect-sessions", "admin"},
+	{"GET", "/v1/orgs/{org}/connections/{connection}/proxy/{path...}", "admin"}, // acts with the user's account
+	{"POST", "/v1/orgs/{org}/connections/{connection}/proxy/{path...}", "admin"},
+	{"PUT", "/v1/orgs/{org}/connections/{connection}/proxy/{path...}", "admin"},
+	{"PATCH", "/v1/orgs/{org}/connections/{connection}/proxy/{path...}", "admin"},
+	{"DELETE", "/v1/orgs/{org}/connections/{connection}/proxy/{path...}", "admin"},
+	{"GET", "/v1/orgs/{org}/proxy-calls", "member"},
 }
 
 func TestEveryOrgRouteHasAPolicy(t *testing.T) {
@@ -157,7 +163,7 @@ func TestPermissions(t *testing.T) {
 		"{org}": orgID, "{user}": adminID, "{key}": adminKey["api_key"].(map[string]any)["id"].(string), "{project}": proj,
 		"{webhook}": wh["id"].(string), "{event}": eventID, "{destination}": dest, "{delivery}": delivery,
 		"{contract}": contract, "{incident}": incident, "{channel}": channel, "{rule}": rule,
-		"{integration}": integration, "{connection}": connection,
+		"{integration}": integration, "{connection}": connection, "{path...}": "v1/anything",
 	}
 	status := func(method, path, token string) (int, string) {
 		req, _ := http.NewRequest(method, e.api.URL+path, bytes.NewBufferString("{}"))

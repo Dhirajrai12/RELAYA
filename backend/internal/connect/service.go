@@ -272,6 +272,9 @@ func (s *Service) RunRefresher(ctx context.Context) {
 			if _, err := s.Pool.Exec(ctx, `DELETE FROM connect_sessions WHERE created_at < now() - interval '7 days'`); err != nil && ctx.Err() == nil {
 				slog.Error("clean up connect sessions", "err", err)
 			}
+			if _, err := s.Pool.Exec(ctx, `DELETE FROM proxy_calls WHERE created_at < now() - interval '30 days'`); err != nil && ctx.Err() == nil {
+				slog.Error("clean up proxy call log", "err", err)
+			}
 			lastCleanup = time.Now()
 		}
 		select {

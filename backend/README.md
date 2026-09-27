@@ -263,6 +263,15 @@ The worker renews tokens expiring within 10 minutes. Temporary failures (timeout
 | `GET …/connections/{connection}/token` → `{access_token, token_type, expires_at, api_base}`; 409 when broken | admin |
 | `POST …/connections/{connection}/refresh` (renew now; returns the connection and any error), `DELETE …` | admin |
 
+### Proxy
+
+`GET|POST|PUT|PATCH|DELETE /v1/orgs/{org}/connections/{connection}/proxy/{path}` (admin) calls the provider's API as the connected user: Relaya adds the token (`Bearer`, or `Zoho-oauthtoken` for Zoho) and forwards the method, query string and body (max 10 MB).
+- **Where**: the connection's API base (e.g. Zoho's `https://www.zohoapis.in`), or `Relaya-Proxy-Base-Url` set to another host of the same provider (Google: any `https://*.googleapis.com`). Tokens are never sent anywhere else, and redirects are handed back rather than followed.
+- **Headers**: `Content-Type`, `Accept`, `Accept-Language`, `If-*` and `Idempotency-Key` go through; send any other header as `Relaya-Proxy-<Name>`. Your `Authorization` and cookies never do. The provider's `Content-Type`, `ETag`, `Location`, `Retry-After`, `Link` and `X-*` headers come back, plus `Relaya-Proxy-Attempts`.
+- **Reliability**: a 401 renews the token and tries once more; GET/PUT/DELETE are retried on 429/502/503/504 (3 attempts, `Retry-After` up to 5 s). POST and PATCH are never retried. Calls may take up to 110 s.
+- **Errors from Relaya itself** (connection broken 409, host not allowed 400, provider unreachable 502) carry `Relaya-Proxy-Error: true`; everything else is the provider's own answer.
+- **Log**: `GET /v1/orgs/{org}/proxy-calls[?connection=]` (member): method, host, path, status, attempts and duration of the last 100 calls; no query strings or bodies; kept 30 days.
+
 Public, rate-limited per IP (the link token is the credential): `GET /v1/connect/sessions/{token}`, `POST …/authorize` (→ provider URL), `POST …/login` (login providers), `GET /v1/connect/callback` (OAuth redirect URI; always redirects).
 
 ## Realtime (WebSocket)

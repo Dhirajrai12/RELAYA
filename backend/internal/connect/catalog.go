@@ -43,6 +43,11 @@ type Provider struct {
 	// APIBaseFor validates a provider-reported API base URL (Zoho's api_domain).
 	APIBaseFor func(reported string) (string, bool) `json:"-"`
 
+	// Proxy: the origins (scheme://host) calls may go to. The user's token is
+	// only ever sent to these. AuthScheme prefixes the token (default "Bearer").
+	ProxyHosts []*regexp.Regexp `json:"-"`
+	AuthScheme string           `json:"-"`
+
 	// Login.
 	LoginURL   string        `json:"-"`
 	LoginTTL   time.Duration `json:"-"` // how long a login token lasts; refreshed before that
@@ -81,6 +86,8 @@ var (
 				return server + "/oauth/v2/token", nil
 			},
 			APIBaseFor: func(reported string) (string, bool) { return reported, zohoAPI.MatchString(reported) },
+			ProxyHosts: []*regexp.Regexp{regexp.MustCompile(`^https://[a-z0-9-]+\.zohoapis\.(com|in|eu|com\.au|jp|ca|sa|com\.cn|uk)$`)},
+			AuthScheme: "Zoho-oauthtoken", // Zoho's documented header format
 		},
 		"hubspot": {
 			Key: "hubspot", Name: "HubSpot", Auth: OAuth2,
@@ -89,6 +96,7 @@ var (
 			AuthURL:       "https://app.hubspot.com/oauth/authorize",
 			TokenURL:      "https://api.hubapi.com/oauth/v1/token",
 			DefaultScopes: []string{"oauth", "crm.objects.contacts.read"},
+			ProxyHosts:    []*regexp.Regexp{regexp.MustCompile(`^https://api\.hubapi\.com$`)},
 		},
 		"google": {
 			Key: "google", Name: "Google", Auth: OAuth2,
@@ -100,6 +108,8 @@ var (
 			PKCE:          true,
 			// offline + consent: Google only returns a refresh token on consent.
 			AuthParams: map[string]string{"access_type": "offline", "prompt": "consent", "include_granted_scopes": "true"},
+			// Each Google API has its own host: sheets.googleapis.com, gmail.googleapis.com…
+			ProxyHosts: []*regexp.Regexp{regexp.MustCompile(`^https://[a-z0-9-]+\.googleapis\.com$`)},
 		},
 		"shiprocket": {
 			Key: "shiprocket", Name: "Shiprocket", Auth: Login,
@@ -108,6 +118,7 @@ var (
 			LoginURL:   "https://apiv2.shiprocket.in/v1/external/auth/login",
 			LoginTTL:   9 * 24 * time.Hour, // tokens last 10 days
 			LoginLabel: "Shiprocket API user (Settings → API → Configure → Create an API user)",
+			ProxyHosts: []*regexp.Regexp{regexp.MustCompile(`^https://apiv2\.shiprocket\.in$`)},
 		},
 	}
 )

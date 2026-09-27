@@ -36,6 +36,7 @@ import type {
   Connection,
   ConnectProviders,
   Integration,
+  ProxyCall,
 } from './types'
 
 /** The selected org ID. Only call inside pages rendered under RequireOrg. */
@@ -792,5 +793,15 @@ export function useCreateConnectSession() {
   return useMutation({
     mutationFn: (v: { integration: string; end_user_id: string; return_url?: string }) =>
       post<{ id: string; url: string; expires_at: string }>(orgPath(orgId, '/connect-sessions'), v),
+  })
+}
+
+export function useProxyCalls() {
+  const orgId = useOrgId()
+  const interval = useLiveInterval(15_000)
+  return useQuery({
+    queryKey: ['proxy-calls', orgId],
+    queryFn: () => get<List<ProxyCall>>(orgPath(orgId, '/proxy-calls')),
+    refetchInterval: interval,
   })
 }

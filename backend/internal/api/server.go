@@ -50,6 +50,8 @@ type Server struct {
 	Status *status.Service
 	// Connections: OAuth/login flows and token storage (nil = off).
 	Connect *connect.Service
+	// Proxy: calls providers' APIs with a connection's token (no redirects followed).
+	ProxyHTTP *http.Client
 	// Public dashboard URL, for Connect links and the pages users return to.
 	DashboardURL string
 	// Rate limits; nil fields are unlimited (tests).
@@ -193,6 +195,12 @@ func (s *Server) Routes() http.Handler {
 		h("POST /v1/orgs/{org}/connections/{connection}/refresh", s.refreshConnection)
 		h("GET /v1/orgs/{org}/connections/{connection}/token", s.connectionToken)
 		h("POST /v1/orgs/{org}/connect-sessions", s.createConnectSession)
+		h("GET /v1/orgs/{org}/connections/{connection}/proxy/{path...}", s.proxyConnection)
+		h("POST /v1/orgs/{org}/connections/{connection}/proxy/{path...}", s.proxyConnection)
+		h("PUT /v1/orgs/{org}/connections/{connection}/proxy/{path...}", s.proxyConnection)
+		h("PATCH /v1/orgs/{org}/connections/{connection}/proxy/{path...}", s.proxyConnection)
+		h("DELETE /v1/orgs/{org}/connections/{connection}/proxy/{path...}", s.proxyConnection)
+		h("GET /v1/orgs/{org}/proxy-calls", s.listProxyCalls)
 	}
 
 	public.Handle("/", s.Auth.Middleware(s.limitCaller(private)))

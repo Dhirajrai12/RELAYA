@@ -160,7 +160,7 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) error
 			return httpx.BadRequest("%s needs your OAuth app's client_id and client_secret", prov.Name)
 		}
 		if in.Scopes == nil {
-			scopes = prov.DefaultScopes
+			scopes = append([]string{}, prov.DefaultScopes...) // never nil: the column is NOT NULL
 		} else if scopes, err = validScopes(*in.Scopes); err != nil {
 			return err
 		}

@@ -92,6 +92,7 @@ func setupWith(t *testing.T, configure func(*api.Server, *ingest.Handler)) *env 
 	srv.Hub = realtime.NewHub(pool)
 	srv.Connect = &connect.Service{Pool: pool, Vault: srv.Vault, Client: connect.NewClient(), RedirectURI: "https://relaya.test/api/v1/connect/callback"}
 	srv.DashboardURL = "https://relaya.test"
+	srv.ProxyHTTP = connect.NewProxyClient()
 	hubCtx, stopHub := context.WithCancel(context.Background())
 	t.Cleanup(stopHub)
 	go srv.Hub.Run(hubCtx)

@@ -64,6 +64,7 @@ func main() {
 	srv.Status = &status.Service{Pool: pool}
 	srv.DashboardURL = cfg.DashboardURL
 	srv.Connect = &connect.Service{Pool: pool, Vault: srv.Vault, Client: connect.NewClient(), RedirectURI: cfg.ConnectRedirectURI}
+	srv.ProxyHTTP = connect.NewProxyClient()
 	srv.Limits = api.Limits{
 		LoginIP:    ratelimit.New(20, time.Minute, 20),
 		LoginEmail: ratelimit.New(10, 15*time.Minute, 10), // failed attempts only
