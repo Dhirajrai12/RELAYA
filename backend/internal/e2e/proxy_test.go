@@ -186,7 +186,10 @@ func TestProxyEndToEnd(t *testing.T) {
 	if st != 409 || h.Get("Relaya-Proxy-Error") != "true" || out["error"].(map[string]any)["code"] != "connection_broken" {
 		t.Fatalf("broken: %d %v", st, out)
 	}
-	raw("GET", base+"/connections/00000000-0000-0000-0000-000000000000/proxy/echo", "", nil) // unknown: 404, nothing logged
+	// Unknown connection: Relaya's 404 (marked, so SDKs don't mistake it for the provider's), nothing logged.
+	if st, h, _ := raw("GET", base+"/connections/00000000-0000-0000-0000-000000000000/proxy/echo", "", nil); st != 404 || h.Get("Relaya-Proxy-Error") != "true" {
+		t.Fatalf("unknown connection: %d %v", st, h)
+	}
 
 	// Call log: newest first, no query strings, statuses and attempts.
 	calls := e.call("GET", base+"/proxy-calls?connection="+connID, tok, nil, 200)["data"].([]any)

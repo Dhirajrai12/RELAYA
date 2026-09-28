@@ -40,6 +40,7 @@ func (s *Server) proxyConnection(w http.ResponseWriter, r *http.Request) error {
 	}
 	connID, err := pathID(r, "connection")
 	if err != nil {
+		w.Header().Set("Relaya-Proxy-Error", "true")
 		return err
 	}
 	relayaErr := func(e *httpx.Error) error {
@@ -92,7 +93,7 @@ func (s *Server) proxyConnection(w http.ResponseWriter, r *http.Request) error {
 	var ce *connect.Error
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return httpx.ErrNotFound
+		return relayaErr(httpx.ErrNotFound) // an unknown connection, not the provider's 404
 	case errors.Is(err, connect.ErrHostNotAllowed):
 		return relayaErr(httpx.BadRequest("%v", err))
 	case errors.Is(err, connect.ErrBroken):
