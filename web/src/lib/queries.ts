@@ -35,6 +35,7 @@ import type {
   Webhook,
   Connection,
   ConnectProviders,
+  Finding,
   Integration,
   ProxyCall,
   Sync,
@@ -235,7 +236,7 @@ export interface EventFilters {
   contract_status?: string
 }
 
-/** Explorer list: newest first, "load more" pagination. Pushed live; polls only if the stream is down. */
+/** Explorer list: newest first, fetched 100 at a time (5 pages of 20). Pushed live; polls only if the stream is down. */
 export function useEvents(filters: EventFilters) {
   const orgId = useOrgId()
   const interval = useLiveInterval(5000)
@@ -243,7 +244,7 @@ export function useEvents(filters: EventFilters) {
     queryKey: ['events', orgId, filters],
     initialPageParam: '',
     queryFn: ({ pageParam }) => {
-      const qs = new URLSearchParams({ limit: '50' })
+      const qs = new URLSearchParams({ limit: '100' })
       for (const [k, v] of Object.entries(filters)) if (v) qs.set(k, v)
       if (pageParam) qs.set('cursor', pageParam)
       return get<Page<EventSummary>>(orgPath(orgId, `/events?${qs}`))
@@ -372,6 +373,18 @@ export function useContract(id: string) {
     queryKey: ['contract', orgId, id],
     queryFn: () => get<ContractDetail>(orgPath(orgId, `/contracts/${id}`)),
     enabled: !!id,
+  })
+}
+
+/** All of a contract's findings, newest first, 100 per request. */
+export function useContractFindings(id: string) {
+  const orgId = useOrgId()
+  return useInfiniteQuery({
+    queryKey: ['contract', orgId, id, 'findings'],
+    initialPageParam: '',
+    queryFn: ({ pageParam }) =>
+      get<{ data: Finding[]; next_before: string | null }>(orgPath(orgId, `/contracts/${id}/findings${pageParam ? `?before=${pageParam}` : ''}`)),
+    getNextPageParam: (last) => last.next_before ?? undefined,
   })
 }
 

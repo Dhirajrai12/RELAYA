@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 
 import { ErrorState } from '@/components/common'
 import { ConfirmButton } from '@/components/confirm'
+import { Pager, usePaged } from '@/components/pager'
 import { SimpleSelect } from '@/components/simple-select'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -45,6 +46,7 @@ export function SyncsCard() {
   const [adding, setAdding] = useState(false)
   const [history, setHistory] = useState<Sync | null>(null)
   const rows = syncs.data?.data ?? []
+  const paged = usePaged(rows, 10)
 
   return (
     <Card className="mt-6">
@@ -72,11 +74,14 @@ export function SyncsCard() {
             No syncs yet. Example: every 15 minutes, turn new Zoho leads into <code className="font-mono text-xs">zoho.lead.created</code> events for your app.
           </p>
         ) : (
-          <ul className="divide-y rounded-lg border">
-            {rows.map((s) => (
-              <SyncRow key={s.id} s={s} onHistory={() => setHistory(s)} />
-            ))}
-          </ul>
+          <div className="rounded-lg border">
+            <ul className="divide-y">
+              {paged.items.map((s) => (
+                <SyncRow key={s.id} s={s} onHistory={() => setHistory(s)} />
+              ))}
+            </ul>
+            <Pager paged={paged} noun="syncs" />
+          </div>
         )}
       </CardContent>
 
@@ -358,6 +363,7 @@ function AddSyncForm({ onClose }: { onClose: () => void }) {
 function RunHistory({ s }: { s: Sync }) {
   const runs = useSyncRuns(s.id)
   const rows = runs.data?.data ?? []
+  const paged = usePaged(rows, 10)
   return (
     <div className="grid min-w-0 grid-cols-1 gap-4">
       <DialogHeader>
@@ -383,7 +389,7 @@ function RunHistory({ s }: { s: Sync }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r) => (
+              {paged.items.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell className="align-top text-xs whitespace-normal text-muted-foreground" title={dateTime(r.started_at)}>
                     {timeAgo(r.started_at)}
@@ -411,6 +417,7 @@ function RunHistory({ s }: { s: Sync }) {
               ))}
             </TableBody>
           </Table>
+          <Pager paged={paged} noun="runs" />
         </div>
       )}
     </div>

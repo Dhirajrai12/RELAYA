@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -217,14 +218,79 @@ func (s *Server) getContract(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	var findingsTotal int
+	if err := s.Pool.QueryRow(r.Context(), `SELECT count(*) FROM contract_violations WHERE contract_id = $1`, id).Scan(&findingsTotal); err != nil {
+		return err
+	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"contract":         c,
 		"fields":           list,
 		"observed_samples": observed.Samples,
 		"new_fields":       newFields,
 		"versions":         versions,
-		"violations":       violations,
+		"violations":       violations, // the latest 50; all of them via /findings
+		"findings_total":   findingsTotal,
 	})
+	return nil
+}
+
+type findingView struct {
+	ID int64 `json:"id"`
+	violationView
+}
+
+// listFindings pages through all of a contract's findings, newest first:
+// ?before=<id of the last one seen>, 100 at a time.
+func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) error {
+	orgID, _, _, err := s.orgAccess(r, auth.RoleMember)
+	if err != nil {
+		return err
+	}
+	id, err := pathID(r, "contract")
+	if err != nil {
+		return err
+	}
+	var ok bool
+	if err := s.Pool.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM contracts WHERE id = $1 AND org_id = $2)`, id, orgID).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return httpx.ErrNotFound
+	}
+	var before int64
+	if b := r.URL.Query().Get("before"); b != "" {
+		if before, err = strconv.ParseInt(b, 10, 64); err != nil || before < 1 {
+			return httpx.BadRequest("before must be a finding id")
+		}
+	}
+	const pageSize = 100
+	rows, err := s.Pool.Query(r.Context(), `
+		SELECT id, event_id, severity, kind, path, expected, actual, created_at, repaired
+		FROM contract_violations
+		WHERE contract_id = $1 AND ($2 = 0 OR id < $2)
+		ORDER BY id DESC LIMIT $3`, id, before, pageSize+1)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	out := []findingView{}
+	for rows.Next() {
+		var f findingView
+		if err := rows.Scan(&f.ID, &f.EventID, &f.Severity, &f.Kind, &f.Path, &f.Expected, &f.Actual, &f.CreatedAt, &f.Repaired); err != nil {
+			return err
+		}
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	var next *string
+	if len(out) > pageSize {
+		out = out[:pageSize]
+		n := strconv.FormatInt(out[pageSize-1].ID, 10)
+		next = &n
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"data": out, "next_before": next})
 	return nil
 }
 

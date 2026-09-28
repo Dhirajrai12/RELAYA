@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 
 import { CopyButton, CopyField, EmptyState, ErrorState, PageHeader } from '@/components/common'
 import { ConfirmButton } from '@/components/confirm'
+import { Pager, usePaged } from '@/components/pager'
 import { SimpleSelect } from '@/components/simple-select'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -449,6 +450,7 @@ function ConnectLinkForm({ initial, integrations }: { initial: { integration: st
 function ConnectionsCard({ onReconnect, onTry }: { onReconnect: (c: Connection) => void; onTry: (c: Connection) => void }) {
   const conns = useConnections()
   const rows = conns.data?.data ?? []
+  const paged = usePaged(rows, 10)
   return (
     <Card className="mt-6">
       <CardHeader>
@@ -474,11 +476,12 @@ function ConnectionsCard({ onReconnect, onTry }: { onReconnect: (c: Connection) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((c) => (
+                {paged.items.map((c) => (
                   <ConnectionRow key={c.id} c={c} onReconnect={() => onReconnect(c)} onTry={() => onTry(c)} />
                 ))}
               </TableBody>
             </Table>
+            <Pager paged={paged} noun="accounts" />
           </div>
         )}
       </CardContent>
@@ -748,6 +751,7 @@ const callBad = 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400'
 function RecentCallsCard() {
   const calls = useProxyCalls()
   const rows = calls.data?.data ?? []
+  const paged = usePaged(rows, 10)
   if (!calls.isPending && !calls.error && rows.length === 0) return null
   return (
     <Card className="mt-6">
@@ -771,7 +775,7 @@ function RecentCallsCard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
+                {paged.items.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="hidden align-top text-xs whitespace-normal text-muted-foreground sm:table-cell" title={dateTime(r.created_at)}>
                       {timeAgo(r.created_at)}
@@ -800,6 +804,7 @@ function RecentCallsCard() {
                 ))}
               </TableBody>
             </Table>
+            <Pager paged={paged} noun="calls" />
           </div>
         )}
       </CardContent>

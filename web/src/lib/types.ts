@@ -257,7 +257,13 @@ export interface ContractDetail {
   observed_samples: number
   new_fields: Record<string, { count: number; first_seen: string; types: string }>
   versions: ContractVersion[]
+  /** The latest 50; page through all of them with useContractFindings. */
   violations: Violation[]
+  findings_total: number
+}
+
+export interface Finding extends Violation {
+  id: number
 }
 
 export interface Incident {

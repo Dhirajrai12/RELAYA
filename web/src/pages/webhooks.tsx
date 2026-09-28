@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { EmptyState, ErrorState, PageHeader } from '@/components/common'
+import { Pager, usePaged } from '@/components/pager'
 import { SimpleSelect } from '@/components/simple-select'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,6 +20,7 @@ import { useCanManage } from '@/lib/role'
 
 export function WebhooksPage() {
   const webhooks = useWebhooks()
+  const paged = usePaged(webhooks.data?.data ?? [])
   const prefetch = usePrefetchWebhook()
   const projects = useProjects()
   const canManage = useCanManage()
@@ -51,7 +53,7 @@ export function WebhooksPage() {
       ) : (
         <>
         <ul className="divide-y rounded-lg border md:hidden">
-          {webhooks.data.data.map((w) => (
+          {paged.items.map((w) => (
             <li key={w.id}>
               <Link to={`/webhooks/${w.id}`} onMouseEnter={() => prefetch(w.id)} onFocus={() => prefetch(w.id)} className="flex items-center gap-3 px-3 py-3 active:bg-muted">
                 <div className="min-w-0 flex-1">
@@ -78,7 +80,7 @@ export function WebhooksPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {webhooks.data.data.map((w) => (
+              {paged.items.map((w) => (
                 <TableRow key={w.id}>
                   <TableCell>
                     <Link to={`/webhooks/${w.id}`} onMouseEnter={() => prefetch(w.id)} onFocus={() => prefetch(w.id)} className="font-medium hover:underline">
@@ -99,6 +101,7 @@ export function WebhooksPage() {
             </TableBody>
           </Table>
         </div>
+        <Pager paged={paged} noun="webhooks" className="mt-3 rounded-lg border" />
         </>
       )}
 

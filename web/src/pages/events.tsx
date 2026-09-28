@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { bytes, dateTime, timeAgo, kindLabel } from '@/lib/format'
 import { useEvent, useEvents, useWebhooks, type EventFilters } from '@/lib/queries'
 import type { EventDetail, EventSummary } from '@/lib/types'
+import { PAGE_SIZE, Pager, usePaged } from '@/components/pager'
 import { cn } from '@/lib/utils'
 
 
@@ -43,6 +44,7 @@ export function EventsPage() {
   const webhooks = useWebhooks()
   const events = useEvents(filters)
   const rows = events.data?.pages.flatMap((p) => p.data) ?? []
+  const paged = usePaged(rows, PAGE_SIZE, JSON.stringify(filters))
   const webhookName = (id: string) => webhooks.data?.data.find((w) => w.id === id)?.name ?? '—'
 
   return (
@@ -160,7 +162,7 @@ export function EventsPage() {
       ) : (
         <>
           <ul className="divide-y rounded-lg border md:hidden">
-            {rows.map((e) => (
+            {paged.items.map((e) => (
               <EventCard key={e.id} e={e} webhookName={webhookName} onOpen={() => setFilter('event', e.id)} />
             ))}
           </ul>
@@ -180,7 +182,7 @@ export function EventsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((e) => (
+                {paged.items.map((e) => (
                   <TableRow
                     key={e.id}
                     className="cursor-pointer"
@@ -211,13 +213,7 @@ export function EventsPage() {
               </TableBody>
             </Table>
           </div>
-          {events.hasNextPage && (
-            <div className="mt-4 flex justify-center">
-              <Button variant="outline" onClick={() => events.fetchNextPage()} disabled={events.isFetchingNextPage}>
-                {events.isFetchingNextPage ? 'Loading…' : 'Load older events'}
-              </Button>
-            </div>
-          )}
+          <Pager paged={paged} hasMore={!!events.hasNextPage} loadMore={() => events.fetchNextPage()} noun="events" className="mt-3 rounded-lg border" />
         </>
       )}
 

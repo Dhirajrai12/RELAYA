@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { Pager, usePaged } from '@/components/pager'
 import { dateTime, timeAgo } from '@/lib/format'
 import {
   useAddMember,
@@ -283,6 +284,7 @@ export function AuditPage() {
   const logs = useAuditLogs()
   const members = useMembers()
   const rows = logs.data?.pages.flatMap((p) => p.data) ?? []
+  const paged = usePaged(rows)
   const actorName = (type: string, id: string) =>
     type === 'user' ? (members.data?.data.find((m) => m.user_id === id)?.email ?? 'former member') : type === 'api_key' ? 'API key' : 'system'
 
@@ -308,7 +310,7 @@ export function AuditPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((a) => (
+                {paged.items.map((a) => (
                   <TableRow key={a.id}>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground" title={dateTime(a.at)}>
                       {timeAgo(a.at)}
@@ -326,14 +328,8 @@ export function AuditPage() {
                 ))}
               </TableBody>
             </Table>
+            <Pager paged={paged} hasMore={!!logs.hasNextPage} loadMore={() => logs.fetchNextPage()} noun="changes" />
           </div>
-          {logs.hasNextPage && (
-            <div className="mt-4 flex justify-center">
-              <Button variant="outline" onClick={() => logs.fetchNextPage()} disabled={logs.isFetchingNextPage}>
-                Load older
-              </Button>
-            </div>
-          )}
         </>
       )}
     </>

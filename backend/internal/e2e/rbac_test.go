@@ -85,6 +85,7 @@ var orgRoutes = []struct {
 	{"PATCH", "/v1/orgs/{org}/connections/{connection}/proxy/{path...}", "admin"},
 	{"DELETE", "/v1/orgs/{org}/connections/{connection}/proxy/{path...}", "admin"},
 	{"GET", "/v1/orgs/{org}/proxy-calls", "member"},
+	{"GET", "/v1/orgs/{org}/contracts/{contract}/findings", "member"},
 	{"GET", "/v1/orgs/{org}/syncs", "member"},
 	{"POST", "/v1/orgs/{org}/syncs", "admin"},
 	{"PATCH", "/v1/orgs/{org}/syncs/{sync}", "admin"},

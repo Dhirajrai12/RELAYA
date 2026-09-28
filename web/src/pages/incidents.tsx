@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { EmptyState, ErrorState, PageHeader } from "@/components/common";
 import { FindingDiff } from "@/components/contract";
 import { LiveIndicator } from "@/components/live-indicator";
+import { Pager, usePaged } from "@/components/pager";
 import { RepairRuleDialog, type RepairRuleSeed } from "@/components/repair";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +43,7 @@ export function IncidentsPage() {
   const [tab, setTab] = useState<"open" | "resolved">("open");
   const { data, error, isPending } = useIncidents(tab);
   const incidents = data?.data ?? [];
+  const paged = usePaged(incidents, 10, tab);
   const autoAfter = data?.auto_resolve_after_seconds ?? 0;
 
   return (
@@ -96,11 +98,14 @@ export function IncidentsPage() {
           <EmptyState title="No resolved incidents yet" />
         )
       ) : (
-        <ul className="space-y-3">
-          {incidents.map((i) => (
-            <IncidentCard key={i.id} i={i} />
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-3">
+            {paged.items.map((i) => (
+              <IncidentCard key={i.id} i={i} />
+            ))}
+          </ul>
+          <Pager paged={paged} noun="incidents" className="mt-3 rounded-lg border" />
+        </>
       )}
     </>
   );

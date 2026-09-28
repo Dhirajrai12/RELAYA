@@ -153,3 +153,60 @@ func TestContractsEndToEnd(t *testing.T) {
 		t.Fatalf("non-JSON: %v", st)
 	}
 }
+
+// TestFindingsPaging: every finding is reachable, 100 at a time, newest first.
+func TestFindingsPaging(t *testing.T) {
+	e := setup(t)
+	s := e.call("POST", "/v1/auth/signup", "", map[string]any{"email": "f@example.com", "password": "correct-horse-1", "org_name": "Findings"}, 201)
+	tok := s["token"].(string)
+	orgID := e.call("GET", "/v1/me", tok, nil, 200)["orgs"].([]any)[0].(map[string]any)["id"].(string)
+	base := "/v1/orgs/" + orgID
+	proj := e.call("POST", base+"/projects", tok, map[string]any{"name": "P"}, 201)["id"].(string)
+	wh := e.call("POST", base+"/webhooks", tok, map[string]any{"project_id": proj, "name": "w", "provider": "generic"}, 201)
+	for i := 0; i < 3; i++ {
+		e.deliver(wh["ingest_url"].(string), fmt.Sprintf(`{"type":"t","amount":%d}`, i), map[string]string{"X-Event-Id": fmt.Sprint(i)})
+	}
+	e.runChecker()
+	cid := e.call("GET", base+"/contracts", tok, nil, 200)["data"].([]any)[0].(map[string]any)["id"].(string)
+	if _, err := e.pool.Exec(context.Background(), `
+		INSERT INTO contract_violations (org_id, contract_id, version, event_id, event_received_at, severity, kind, path, expected, actual)
+		SELECT $1, $2, 1, gen_random_uuid(), now(), 'suspicious', 'type_changed', 'field_' || g, 'number', 'string'
+		FROM generate_series(1, 230) g`, orgID, cid); err != nil {
+		t.Fatal(err)
+	}
+	if d := e.call("GET", base+"/contracts/"+cid, tok, nil, 200); d["findings_total"] != float64(230) || len(d["violations"].([]any)) != 50 {
+		t.Fatalf("detail: total %v, %d inline", d["findings_total"], len(d["violations"].([]any)))
+	}
+
+	seen := map[string]bool{}
+	last := 1 << 62
+	before, pages := "", 0
+	for {
+		path := base + "/contracts/" + cid + "/findings"
+		if before != "" {
+			path += "?before=" + before
+		}
+		p := e.call("GET", path, tok, nil, 200)
+		pages++
+		for _, f := range p["data"].([]any) {
+			m := f.(map[string]any)
+			id := int(m["id"].(float64))
+			if id >= last {
+				t.Fatalf("not newest first: %d after %d", id, last)
+			}
+			last = id
+			seen[m["path"].(string)] = true
+		}
+		if p["next_before"] == nil {
+			break
+		}
+		before = p["next_before"].(string)
+	}
+	if pages != 3 || len(seen) != 230 {
+		t.Fatalf("%d pages, %d distinct findings", pages, len(seen))
+	}
+	e.call("GET", base+"/contracts/"+cid+"/findings?before=x", tok, nil, 400)
+	other := e.call("POST", "/v1/auth/signup", "", map[string]any{"email": "o@example.com", "password": "correct-horse-1", "org_name": "Other"}, 201)["token"].(string)
+	otherOrg := e.call("GET", "/v1/me", other, nil, 200)["orgs"].([]any)[0].(map[string]any)["id"].(string)
+	e.call("GET", "/v1/orgs/"+otherOrg+"/contracts/"+cid+"/findings", other, nil, 404)
+}

@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import { EmptyState, ErrorState, PageHeader } from '@/components/common'
 import { ConfirmButton } from '@/components/confirm'
+import { Pager, usePaged } from '@/components/pager'
 import { SecretDialog } from '@/components/delivery'
 import { SimpleSelect } from '@/components/simple-select'
 import { Badge } from '@/components/ui/badge'
@@ -374,6 +375,7 @@ const statusStyle: Record<AlertLogEntry['status'], string> = {
 function AlertLog() {
   const log = useAlertLog()
   const rows = log.data?.data ?? []
+  const paged = usePaged(rows, 10)
   if (!log.isPending && !log.error && rows.length === 0) return null
 
   return (
@@ -399,7 +401,7 @@ function AlertLog() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((a) => (
+                {paged.items.map((a) => (
                   <TableRow key={a.id}>
                     <TableCell className="hidden align-top text-xs whitespace-normal text-muted-foreground sm:table-cell" title={dateTime(a.created_at)}>
                       {timeAgo(a.created_at)}
@@ -434,6 +436,7 @@ function AlertLog() {
                 ))}
               </TableBody>
             </Table>
+            <Pager paged={paged} noun="alerts" />
           </div>
         )}
       </CardContent>

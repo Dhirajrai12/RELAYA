@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import { EmptyState, ErrorState, PageHeader } from '@/components/common'
 import { ConfirmButton } from '@/components/confirm'
+import { Pager, usePaged } from '@/components/pager'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -16,6 +17,7 @@ import { useCanManage, useHasRole } from '@/lib/role'
 export function ProjectsPage() {
   const projects = useProjects()
   const webhooks = useWebhooks()
+  const paged = usePaged(projects.data?.data ?? [])
   const create = useCreateProject()
   const remove = useDeleteProject()
   const canManage = useCanManage()
@@ -66,7 +68,7 @@ export function ProjectsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {projects.data.data.map((p) => (
+              {paged.items.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">{p.name}</TableCell>
                   <TableCell className="hidden sm:table-cell">{webhookCount(p.id)}</TableCell>
@@ -89,6 +91,7 @@ export function ProjectsPage() {
               ))}
             </TableBody>
           </Table>
+          <Pager paged={paged} noun="projects" />
         </div>
       )}
     </>

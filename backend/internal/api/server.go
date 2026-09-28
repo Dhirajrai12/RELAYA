@@ -159,6 +159,7 @@ func (s *Server) Routes() http.Handler {
 
 	h("GET /v1/orgs/{org}/contracts", s.listContracts)
 	h("GET /v1/orgs/{org}/contracts/{contract}", s.getContract)
+	h("GET /v1/orgs/{org}/contracts/{contract}/findings", s.listFindings)
 	h("POST /v1/orgs/{org}/contracts/{contract}/versions", s.createContractVersion)
 	h("POST /v1/orgs/{org}/contracts/{contract}/relearn", s.relearnContract)
 	h("GET /v1/orgs/{org}/incidents", s.listIncidents)

@@ -6,13 +6,14 @@ import { toast } from 'sonner'
 import { ErrorState, PageHeader } from '@/components/common'
 import { ConfirmButton } from '@/components/confirm'
 import { ContractStateBadge, FindingDiff, SeverityBadge } from '@/components/contract'
+import { Pager, usePaged } from '@/components/pager'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { errorMessage } from '@/lib/api'
 import { dateTime, timeAgo, kindLabel } from '@/lib/format'
-import { useContract, useCreateContractVersion, useRelearnContract } from '@/lib/queries'
+import { useContract, useContractFindings, useCreateContractVersion, useRelearnContract } from '@/lib/queries'
 import { useCanManage } from '@/lib/role'
 import { cn } from '@/lib/utils'
 import type { ContractDetail, ContractField } from '@/lib/types'
@@ -67,6 +68,8 @@ function ContractView({ d }: { d: ContractDetail }) {
       .then((r) => toast.success(reviewing ? `Contract activated (v${r.version})` : `Saved as v${r.version}`), (e) => toast.error(errorMessage(e)))
 
   const newFields = Object.entries(d.new_fields)
+  const newPaged = usePaged(newFields, 10)
+  const versionsPaged = usePaged(d.versions, 10)
   const visibleFields = reviewing ? d.fields : d.fields.filter((f) => f.in_version || f.observed_types)
 
   return (
@@ -111,8 +114,9 @@ function ContractView({ d }: { d: ContractDetail }) {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <ul className="divide-y rounded-lg border text-sm">
-                  {newFields.map(([path, nf]) => (
+                <div className="rounded-lg border">
+                <ul className="divide-y text-sm">
+                  {newPaged.items.map(([path, nf]) => (
                     <li key={path} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2">
                       <FieldPath path={path} />
                       <span className="font-mono text-xs text-muted-foreground">{nf.types}</span>
@@ -122,6 +126,8 @@ function ContractView({ d }: { d: ContractDetail }) {
                     </li>
                   ))}
                 </ul>
+                <Pager paged={newPaged} noun="new fields" />
+                </div>
                 {canManage && (
                   <ConfirmButton
                     title="Accept the current shape as a new version?"
@@ -163,33 +169,7 @@ function ContractView({ d }: { d: ContractDetail }) {
           </CardContent>
         </Card>
 
-        {!reviewing && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent findings</CardTitle>
-              <CardDescription>Warnings and breaking changes found in events, newest first.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {d.violations.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No warnings or breaking changes. Every checked event matches.</p>
-              ) : (
-                <ul className="divide-y rounded-lg border">
-                  {d.violations.map((v, i) => (
-                    <li key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
-                      <SeverityBadge severity={v.severity} />
-                      <span>{kindLabel(v.kind)}</span>
-                      <FieldPath path={v.path} />
-                      <FindingDiff expected={v.expected} actual={v.actual} />
-                      <Link to={`/events?event=${v.event_id}`} className="ml-auto text-xs text-muted-foreground underline-offset-4 hover:underline">
-                        {timeAgo(v.created_at)} · view event
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        {!reviewing && <FindingsCard contractId={c.id} total={d.findings_total} />}
 
         {d.versions.length > 0 && (
           <Card>
@@ -197,8 +177,9 @@ function ContractView({ d }: { d: ContractDetail }) {
               <CardTitle>Versions</CardTitle>
             </CardHeader>
             <CardContent>
-              <ul className="divide-y rounded-lg border text-sm">
-                {d.versions.map((v) => (
+              <div className="rounded-lg border">
+              <ul className="divide-y text-sm">
+                {versionsPaged.items.map((v) => (
                   <li key={v.version} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2">
                     <span className="font-medium">v{v.version}</span>
                     {v.version === c.active_version && <Badge variant="secondary">active</Badge>}
@@ -210,6 +191,8 @@ function ContractView({ d }: { d: ContractDetail }) {
                   </li>
                 ))}
               </ul>
+              <Pager paged={versionsPaged} noun="versions" />
+              </div>
             </CardContent>
           </Card>
         )}
@@ -292,10 +275,12 @@ function FieldsTable({
   onToggle: (p: string) => void
   active: boolean
 }) {
+  const paged = usePaged(fields, 25)
   if (fields.length === 0) return <p className="text-sm text-muted-foreground">No fields yet.</p>
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table className="w-full text-sm">
+    <div className="rounded-lg border">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
         <thead className="bg-muted/50 text-xs text-muted-foreground">
           <tr>
             <th className="w-20 px-3 py-2 text-left font-medium">Critical</th>
@@ -307,7 +292,7 @@ function FieldsTable({
           </tr>
         </thead>
         <tbody className="divide-y">
-          {fields.map((f) => {
+          {paged.items.map((f) => {
             const drift = active && f.in_version && f.observed_types?.some((t) => !f.types?.includes(t))
             return (
               <tr key={f.path} className={cn(critical.has(f.path) && 'bg-brand/5')}>
@@ -356,7 +341,52 @@ function FieldsTable({
             )
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
+      <Pager paged={paged} noun="fields" />
     </div>
+  )
+}
+
+/** Every finding for the contract, 10 per page, fetched from the server 100 at a time. */
+function FindingsCard({ contractId, total }: { contractId: string; total: number }) {
+  const findings = useContractFindings(contractId)
+  const rows = findings.data?.pages.flatMap((p) => p.data) ?? []
+  const paged = usePaged(rows, 10)
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Findings</CardTitle>
+        <CardDescription>
+          Warnings and breaking changes found in events, newest first{total > 0 ? ` (${total} in all)` : ''}.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {findings.error ? (
+          <ErrorState error={findings.error} />
+        ) : findings.isPending ? (
+          <Skeleton className="h-24 w-full" />
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No warnings or breaking changes. Every checked event matches.</p>
+        ) : (
+          <div className="rounded-lg border">
+            <ul className="divide-y">
+              {paged.items.map((v) => (
+                <li key={v.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                  <SeverityBadge severity={v.severity} />
+                  <span>{kindLabel(v.kind)}</span>
+                  <FieldPath path={v.path} />
+                  <FindingDiff expected={v.expected} actual={v.actual} />
+                  <Link to={`/events?event=${v.event_id}`} className="ml-auto text-xs text-muted-foreground underline-offset-4 hover:underline">
+                    {timeAgo(v.created_at)} · view event
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <Pager paged={paged} hasMore={!!findings.hasNextPage} loadMore={() => findings.fetchNextPage()} noun="findings" />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }

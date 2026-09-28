@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { EmptyState, ErrorState, PageHeader } from '@/components/common'
 import { ContractStateBadge } from '@/components/contract'
 import { LiveIndicator } from '@/components/live-indicator'
+import { Pager, usePaged } from '@/components/pager'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { timeAgo } from '@/lib/format'
@@ -13,6 +14,7 @@ import type { Contract } from '@/lib/types'
 export function ContractsPage() {
   const { data, error, isPending } = useContracts()
   const contracts = data?.data ?? []
+  const paged = usePaged(contracts)
 
   return (
     <>
@@ -33,7 +35,7 @@ export function ContractsPage() {
       ) : (
         <>
           <ul className="divide-y rounded-lg border md:hidden">
-            {contracts.map((c) => (
+            {paged.items.map((c) => (
               <li key={c.id}>
                 <Link to={`/contracts/${c.id}`} className="block px-3 py-3 active:bg-muted">
                   <div className="flex items-center justify-between gap-2">
@@ -60,7 +62,7 @@ export function ContractsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {contracts.map((c) => (
+                {paged.items.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell>
                       <Link to={`/contracts/${c.id}`} className="font-mono text-sm hover:underline">
@@ -84,6 +86,7 @@ export function ContractsPage() {
               </TableBody>
             </Table>
           </div>
+          <Pager paged={paged} noun="contracts" className="mt-3 rounded-lg border" />
         </>
       )}
     </>
