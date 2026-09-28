@@ -120,22 +120,25 @@ function SidebarContent({ orgs, onNavigate }: { orgs: Org[]; onNavigate?: () => 
         />
       )}
 
-      <nav className="flex flex-col gap-0.5">
-        {nav.map((n) => (
-          <NavItem key={n.to} {...n} onNavigate={onNavigate} />
-        ))}
-      </nav>
-
-      <div className="mt-6 px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Settings</div>
-      <nav className="flex flex-col gap-0.5">
-        {settingsNav
-          .filter((n) => !n.minRole || isAdmin)
-          .map((n) => (
+      {/* The menu scrolls on short screens; the account block stays at the bottom. */}
+      <div className="-mx-3 min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <nav className="flex flex-col gap-0.5">
+          {nav.map((n) => (
             <NavItem key={n.to} {...n} onNavigate={onNavigate} />
           ))}
-      </nav>
+        </nav>
 
-      <div className="mt-auto space-y-3 border-t pt-3">
+        <div className="mt-6 px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Settings</div>
+        <nav className="flex flex-col gap-0.5">
+          {settingsNav
+            .filter((n) => !n.minRole || isAdmin)
+            .map((n) => (
+              <NavItem key={n.to} {...n} onNavigate={onNavigate} />
+            ))}
+        </nav>
+      </div>
+
+      <div className="shrink-0 space-y-3 border-t pt-3">
         <div className="flex items-center gap-2.5 px-1">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-sm font-semibold text-brand-foreground dark:text-brand">
             {(user?.name || user?.email || '?').charAt(0).toUpperCase()}

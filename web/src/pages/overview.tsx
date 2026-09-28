@@ -10,6 +10,7 @@ import {
 import { Link } from 'react-router-dom'
 
 import { ErrorState, PageHeader, StatTile } from '@/components/common'
+import { Pager, usePaged } from '@/components/pager'
 import { TrafficChart } from '@/components/traffic-chart'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { compact, providerLabel, timeAgo } from '@/lib/format'
 import { useEventStats, usePrefetchWebhook, useProjects, useWebhooks } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+import { IntegrationsCard, OpenIncidentsCard, RecentEventsCard } from '@/pages/overview-cards'
 import type { Webhook, WebhookHealth } from '@/lib/types'
 
 export function OverviewPage() {
@@ -89,25 +91,59 @@ export function OverviewPage() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <CardTitle>Webhook health</CardTitle>
-            <CardDescription>Based on the last 24 hours</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {hooks.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No webhooks yet.</p>
-            ) : (
-              <ul className="-mx-2 divide-y">
-                {hooks.map((w) => (
-                  <HealthRow key={w.id} w={w} h={s.webhooks.find((x) => x.webhook_id === w.id)} />
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+        <WebhookHealthCard hooks={hooks} health={s.webhooks} />
+      </div>
+
+      {/* Same columns as the row above; the right column stacks two shorter cards. */}
+      <div className="mt-6 grid gap-6 lg:grid-cols-2 xl:grid-cols-5">
+        <RecentEventsCard className="xl:col-span-3" />
+        <div className="flex min-w-0 flex-col gap-6 xl:col-span-2">
+          <OpenIncidentsCard />
+          <IntegrationsCard className="flex-1" />
+        </div>
       </div>
     </>
+  )
+}
+
+// Webhooks that need attention first, then the busiest.
+const healthRank = (h?: WebhookHealth) => (!h?.last_received_at ? 3 : h.rejected > 0 ? 0 : h.received > 0 ? 1 : 2)
+
+function WebhookHealthCard({ hooks, health }: { hooks: Webhook[]; health: WebhookHealth[] }) {
+  const byId = new Map(health.map((h) => [h.webhook_id, h]))
+  const sorted = [...hooks].sort((x, y) => {
+    const hx = byId.get(x.id), hy = byId.get(y.id)
+    return healthRank(hx) - healthRank(hy) || (hy?.rejected ?? 0) - (hx?.rejected ?? 0) || (hy?.received ?? 0) - (hx?.received ?? 0) || x.name.localeCompare(y.name)
+  })
+  const paged = usePaged(sorted, 6)
+  return (
+    <Card className="xl:col-span-2">
+      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <CardTitle>Webhook health</CardTitle>
+          <CardDescription className="mt-1.5">Last 24 hours, problems first</CardDescription>
+        </div>
+        {hooks.length > 0 && (
+          <Link to="/webhooks" className="text-sm text-brand hover:underline">
+            View all
+          </Link>
+        )}
+      </CardHeader>
+      <CardContent>
+        {hooks.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No webhooks yet.</p>
+        ) : (
+          <>
+            <ul className="-mx-2 divide-y">
+              {paged.items.map((w) => (
+                <HealthRow key={w.id} w={w} h={byId.get(w.id)} />
+              ))}
+            </ul>
+            <Pager paged={paged} noun="webhooks" className="-mx-6 -mb-6 mt-2 px-6" />
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

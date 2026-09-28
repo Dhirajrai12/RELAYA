@@ -45,7 +45,7 @@ export function TrafficChart({ hours }: { hours: HourBucket[] }) {
         <TableView rows={rows} />
       ) : (
         <div
-          className="h-56 w-full md:h-64"
+          className="h-56 w-full md:h-64 xl:h-80"
           role="img"
           aria-label={`Webhook deliveries per hour over the last 24 hours: ${total} in total.`}
         >

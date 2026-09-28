@@ -258,6 +258,17 @@ export function useEvents(filters: EventFilters) {
   })
 }
 
+/** The newest few events, for the overview. Shares the 'events' key so live updates refresh it. */
+export function useRecentEvents(limit = 6) {
+  const orgId = useOrgId()
+  const interval = useLiveInterval(10_000)
+  return useQuery({
+    queryKey: ['events', orgId, 'recent', limit],
+    queryFn: () => get<Page<EventSummary>>(orgPath(orgId, `/events?limit=${limit}`)),
+    refetchInterval: interval,
+  })
+}
+
 export function useEvent(id: string | null) {
   const orgId = useOrgId()
   const interval = useLiveInterval(3000)
