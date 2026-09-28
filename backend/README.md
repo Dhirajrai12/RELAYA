@@ -300,6 +300,28 @@ A sync reads a connection's data on a schedule (every 5 minutes to once a day) a
 
 Public, rate-limited per IP (the link token is the credential): `GET /v1/connect/sessions/{token}`, `POST …/authorize` (→ provider URL), `POST …/login` (login providers), `GET /v1/connect/callback` (OAuth redirect URI; always redirects).
 
+## Outbound webhooks
+
+For SaaS products that send webhooks to their own customers. The product calls one API; Relaya signs, delivers, retries and logs, and each customer manages their endpoints in a hosted portal.
+
+- **Apps.** One per customer, keyed by the product's own ID (`uid`, e.g. `customer-123`). Each app owns a hidden webhook (`webhooks.kind = 'outbound'`) whose destinations are the customer's endpoints (at most 20). Outbound webhooks don't appear in the inbound list and refuse ingest (404).
+- **Messages.** `POST …/outbound/messages` `{"app", "event_type", "payload", "idempotency_key"}` stores an event with body `{"type", "timestamp", "data"}` and queues one delivery per endpoint that takes that type, through the normal worker (retries, Events, replay). The same `idempotency_key` returns the first message with `duplicate: true`. New types are added to the event-type catalog automatically.
+- **Signing.** [Standard Webhooks](https://www.standardwebhooks.com): `webhook-id` (the message ID, the same on every retry), `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256(key, "<id>.<ts>.<body>")>`, secret `whsec_…`. No `Relaya-*` headers, so customers can use any Standard Webhooks library.
+- **Routing.** Endpoints (and inbound destinations, via `event_types`) can take only some event types; an empty list takes all of them, including new ones.
+- **Portal.** `POST …/portal-link` returns `{url, expires_at}` for a 24-hour link `DASHBOARD_URL/portal#ps_…`; the token sits in the URL fragment, so it never reaches server logs. There the customer adds, edits, disables and deletes endpoints, shows and rotates signing secrets, sends test events, and browses deliveries (with the last response) and re-sends failed ones. The portal only reaches its own app's endpoints; its changes are audited as `portal:<uid>`.
+
+| Method & path | Min role |
+|---|---|
+| `GET /v1/orgs/{org}/outbound/apps`, `GET …/apps/{app}` (with endpoints) | member |
+| `POST /v1/orgs/{org}/outbound/apps` `{"uid", "name"}`, `DELETE …/apps/{app}` | admin |
+| `POST …/apps/{app}/endpoints` `{"url", "description", "event_types"}` (→ `signing_secret`), `PATCH/DELETE …/endpoints/{endpoint}` | admin |
+| `GET …/endpoints/{endpoint}/secret`, `POST …/endpoints/{endpoint}/test[?event_type=]` | admin |
+| `POST …/apps/{app}/portal-link` | admin |
+| `POST /v1/orgs/{org}/outbound/messages` | admin (API key) |
+| `GET /v1/orgs/{org}/outbound/event-types`; `POST` `{"name", "description"}`, `DELETE …/event-types/{name}` | member; admin |
+
+Public, rate-limited per IP, `Authorization: Bearer ps_…`: `GET /v1/portal/app`, `GET/POST /v1/portal/endpoints`, `PATCH/DELETE …/endpoints/{endpoint}`, `GET …/secret`, `POST …/rotate-secret`, `POST …/test`, `GET /v1/portal/deliveries?status=&endpoint=&before=`, `POST /v1/portal/deliveries/{delivery}/retry` (failed or retrying only).
+
 ## Realtime (WebSocket)
 
 Dashboards stay live without refreshing: `GET /v1/orgs/{org}/stream` upgrades to a WebSocket.

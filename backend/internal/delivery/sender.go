@@ -33,6 +33,9 @@ type Request struct {
 	// Set when repair rules changed Body: the rules' IDs (sent as Relaya-Repaired) and names (attempt log).
 	RepairedIDs   []string
 	RepairedNames []string
+	// "standard": an outbound endpoint, signed with Standard Webhooks headers
+	// and nothing Relaya-specific; otherwise Relaya-Signature.
+	Scheme string
 }
 
 // bodyBound reports whether a provider header is computed over the original
@@ -75,6 +78,20 @@ func (s *Sender) Send(ctx context.Context, r Request) Result {
 	if err != nil {
 		return Result{Err: err}
 	}
+	if r.Scheme == "standard" {
+		// Outbound: the org's own message to its customer. The message ID stays the
+		// same across retries and endpoints, so receivers can deduplicate on it.
+		ct := r.ContentType
+		if ct == "" {
+			ct = "application/json"
+		}
+		req.Header.Set("Content-Type", ct)
+		req.Header.Set("User-Agent", "Webhooks/1.0")
+		req.Header.Set("webhook-id", r.EventID)
+		req.Header.Set("webhook-timestamp", strconv.FormatInt(now.Unix(), 10))
+		req.Header.Set("webhook-signature", SignStandard(r.Secret, r.EventID, now, r.Body))
+		return s.do(req, now)
+	}
 
 	// Forward the provider's headers so existing receivers (and their own
 	// provider-signature checks) keep working unchanged.
@@ -107,7 +124,10 @@ func (s *Sender) Send(ctx context.Context, r Request) Result {
 		req.Header.Set("Relaya-Event-Type", r.EventType)
 	}
 	req.Header.Set(SignatureHeader, Sign(r.Secret, now, r.Body))
+	return s.do(req, now)
+}
 
+func (s *Sender) do(req *http.Request, now time.Time) Result {
 	start := time.Now()
 	resp, err := s.Client.Do(req)
 	res := Result{Duration: time.Since(start)}

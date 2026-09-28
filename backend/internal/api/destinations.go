@@ -26,6 +26,7 @@ type destinationView struct {
 	Enabled     bool      `json:"enabled"`
 	TimeoutMS   int       `json:"timeout_ms"`
 	MaxAttempts int       `json:"max_attempts"`
+	EventTypes  []string  `json:"event_types"` // only these types (empty = all)
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	// Health over the last 24 hours plus what's currently queued.
@@ -38,7 +39,7 @@ type destinationView struct {
 	} `json:"stats"`
 }
 
-const destinationCols = `d.id, d.webhook_id, d.name, d.url, d.enabled, d.timeout_ms, d.max_attempts, d.created_at, d.updated_at,
+const destinationCols = `d.id, d.webhook_id, d.name, d.url, d.enabled, d.timeout_ms, d.max_attempts, d.event_types, d.created_at, d.updated_at,
 	coalesce(s.ok, 0), coalesce(s.failed, 0), coalesce(s.retrying, 0), coalesce(s.pending, 0), s.last_ok`
 
 // destinationStats is joined LATERAL onto destinations d.
@@ -54,7 +55,7 @@ const destinationStats = `
 
 func scanDestination(row pgx.Row) (destinationView, error) {
 	var v destinationView
-	err := row.Scan(&v.ID, &v.WebhookID, &v.Name, &v.URL, &v.Enabled, &v.TimeoutMS, &v.MaxAttempts, &v.CreatedAt, &v.UpdatedAt,
+	err := row.Scan(&v.ID, &v.WebhookID, &v.Name, &v.URL, &v.Enabled, &v.TimeoutMS, &v.MaxAttempts, &v.EventTypes, &v.CreatedAt, &v.UpdatedAt,
 		&v.Stats.Succeeded24h, &v.Stats.Failed24h, &v.Stats.Retrying, &v.Stats.Pending, &v.Stats.LastSuccess)
 	return v, err
 }
@@ -101,11 +102,12 @@ func (s *Server) listDestinations(w http.ResponseWriter, r *http.Request) error 
 }
 
 type destinationInput struct {
-	Name        *string `json:"name"`
-	URL         *string `json:"url"`
-	Enabled     *bool   `json:"enabled"`
-	TimeoutMS   *int    `json:"timeout_ms"`
-	MaxAttempts *int    `json:"max_attempts"`
+	Name        *string   `json:"name"`
+	URL         *string   `json:"url"`
+	Enabled     *bool     `json:"enabled"`
+	TimeoutMS   *int      `json:"timeout_ms"`
+	MaxAttempts *int      `json:"max_attempts"`
+	EventTypes  *[]string `json:"event_types"` // routing: only these event types (empty = all)
 }
 
 func (s *Server) validateDestination(in destinationInput) error {
@@ -119,6 +121,16 @@ func (s *Server) validateDestination(in destinationInput) error {
 	}
 	if in.MaxAttempts != nil && (*in.MaxAttempts < 1 || *in.MaxAttempts > 20) {
 		return httpx.BadRequest("max_attempts must be between 1 and 20")
+	}
+	if in.EventTypes != nil {
+		if len(*in.EventTypes) > 100 {
+			return httpx.BadRequest("at most 100 event types")
+		}
+		for _, t := range *in.EventTypes {
+			if !eventTypeRe.MatchString(t) {
+				return httpx.BadRequest("invalid event type %q", t)
+			}
+		}
 	}
 	return nil
 }
@@ -147,7 +159,10 @@ func (s *Server) createDestination(w http.ResponseWriter, r *http.Request) error
 	if err := s.validateDestination(in); err != nil {
 		return err
 	}
-	timeout, attempts := 10000, 8
+	timeout, attempts, types := 10000, 8, []string{}
+	if in.EventTypes != nil {
+		types = *in.EventTypes
+	}
 	if in.TimeoutMS != nil {
 		timeout = *in.TimeoutMS
 	}
@@ -172,9 +187,9 @@ func (s *Server) createDestination(w http.ResponseWriter, r *http.Request) error
 		}
 		var id string
 		if err := tx.QueryRow(r.Context(), `
-			INSERT INTO destinations (org_id, webhook_id, name, url, signing_secret_enc, timeout_ms, max_attempts)
-			VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-			orgID, webhookID, name, strings.TrimSpace(*in.URL), secretEnc, timeout, attempts).Scan(&id); err != nil {
+			INSERT INTO destinations (org_id, webhook_id, name, url, signing_secret_enc, timeout_ms, max_attempts, event_types)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+			orgID, webhookID, name, strings.TrimSpace(*in.URL), secretEnc, timeout, attempts, types).Scan(&id); err != nil {
 			return err
 		}
 		if v, err = getDestination(r.Context(), tx, orgID, id); err != nil {
@@ -234,6 +249,9 @@ func (s *Server) updateDestination(w http.ResponseWriter, r *http.Request) error
 	}
 	if in.MaxAttempts != nil {
 		set("max_attempts", *in.MaxAttempts)
+	}
+	if in.EventTypes != nil {
+		set("event_types", *in.EventTypes)
 	}
 
 	var v destinationView

@@ -41,6 +41,10 @@ import type {
   Sync,
   SyncModel,
   SyncRun,
+  EndpointTestResult,
+  OutboundApp,
+  OutboundEndpoint,
+  OutboundEventType,
 } from './types'
 
 /** The selected org ID. Only call inside pages rendered under RequireOrg. */
@@ -483,6 +487,7 @@ export interface DestinationInput {
   enabled?: boolean
   max_attempts?: number
   timeout_ms?: number
+  event_types?: string[]
 }
 
 export function useCreateDestination(webhookId: string) {
@@ -904,3 +909,98 @@ export function useDeleteSync() {
     onSuccess: (_, id) => removeFromList(qc, ['syncs', orgId], id),
   })
 }
+
+// ---- outbound webhooks ------------------------------------------------------------
+
+export function useOutboundApps() {
+  const orgId = useOrgId()
+  const interval = useLiveInterval(30_000)
+  return useQuery({
+    queryKey: ['outbound-apps', orgId],
+    queryFn: () => get<List<OutboundApp>>(orgPath(orgId, '/outbound/apps')),
+    refetchInterval: interval,
+  })
+}
+
+export function useOutboundApp(ref: string) {
+  const orgId = useOrgId()
+  const interval = useLiveInterval(15_000)
+  return useQuery({
+    queryKey: ['outbound-app', orgId, ref],
+    queryFn: () => get<{ app: OutboundApp; endpoints: OutboundEndpoint[] }>(orgPath(orgId, `/outbound/apps/${encodeURIComponent(ref)}`)),
+    refetchInterval: interval,
+  })
+}
+
+/** Mutations on outbound apps; each refreshes the app list and app detail. */
+function useOutboundMutation<V, R>(fn: (orgId: string, v: V) => Promise<R>) {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: V) => fn(orgId, v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['outbound-apps', orgId] })
+      qc.invalidateQueries({ queryKey: ['outbound-app', orgId] })
+      qc.invalidateQueries({ queryKey: ['outbound-event-types', orgId] })
+    },
+  })
+}
+
+export const useCreateOutboundApp = () =>
+  useOutboundMutation((orgId, v: { uid: string; name?: string }) => post<OutboundApp>(orgPath(orgId, '/outbound/apps'), v))
+
+export const useDeleteOutboundApp = () =>
+  useOutboundMutation((orgId, ref: string) => del(orgPath(orgId, `/outbound/apps/${encodeURIComponent(ref)}`)))
+
+export interface EndpointInput {
+  url?: string
+  description?: string
+  event_types?: string[]
+  enabled?: boolean
+}
+
+export const useCreateOutboundEndpoint = (app: string) =>
+  useOutboundMutation((orgId, v: EndpointInput) =>
+    post<{ endpoint: OutboundEndpoint; signing_secret: string }>(orgPath(orgId, `/outbound/apps/${encodeURIComponent(app)}/endpoints`), v),
+  )
+
+export const useUpdateOutboundEndpoint = (app: string) =>
+  useOutboundMutation((orgId, { id, ...v }: EndpointInput & { id: string }) =>
+    patch<OutboundEndpoint>(orgPath(orgId, `/outbound/apps/${encodeURIComponent(app)}/endpoints/${id}`), v),
+  )
+
+export const useDeleteOutboundEndpoint = (app: string) =>
+  useOutboundMutation((orgId, id: string) => del(orgPath(orgId, `/outbound/apps/${encodeURIComponent(app)}/endpoints/${id}`)))
+
+export const useTestOutboundEndpoint = (app: string) =>
+  useOutboundMutation((orgId, id: string) =>
+    post<EndpointTestResult>(orgPath(orgId, `/outbound/apps/${encodeURIComponent(app)}/endpoints/${id}/test`)),
+  )
+
+export function fetchOutboundEndpointSecret(orgId: string, app: string, id: string) {
+  return get<{ signing_secret: string }>(orgPath(orgId, `/outbound/apps/${encodeURIComponent(app)}/endpoints/${id}/secret`))
+}
+
+export const useCreatePortalLink = (app: string) =>
+  useOutboundMutation((orgId, _: void) =>
+    post<{ url: string; expires_at: string }>(orgPath(orgId, `/outbound/apps/${encodeURIComponent(app)}/portal-link`)),
+  )
+
+export const useSendOutboundMessage = () =>
+  useOutboundMutation((orgId, v: { app: string; event_type: string; payload: unknown; idempotency_key?: string }) =>
+    post<{ id: string; app: string; event_type: string; endpoints: number; duplicate: boolean }>(orgPath(orgId, '/outbound/messages'), v),
+  )
+
+export function useOutboundEventTypes() {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['outbound-event-types', orgId],
+    queryFn: () => get<List<OutboundEventType>>(orgPath(orgId, '/outbound/event-types')),
+  })
+}
+
+export const useSaveOutboundEventType = () =>
+  useOutboundMutation((orgId, v: { name: string; description?: string }) => post<OutboundEventType>(orgPath(orgId, '/outbound/event-types'), v))
+
+export const useDeleteOutboundEventType = () =>
+  useOutboundMutation((orgId, name: string) => del(orgPath(orgId, `/outbound/event-types/${encodeURIComponent(name)}`)))

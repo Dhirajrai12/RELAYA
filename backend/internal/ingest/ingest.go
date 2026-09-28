@@ -210,13 +210,15 @@ func StoreTx(ctx context.Context, tx pgx.Tx, ev Event, dedup bool) (id string, d
 	return id, false, enqueueDeliveries(ctx, tx, id, ev)
 }
 
-// enqueueDeliveries creates one delivery job per enabled destination, in the
-// same transaction as the event, and wakes the workers once it commits.
+// enqueueDeliveries creates one delivery job per enabled destination that
+// takes this event type (no event types = all), in the same transaction as the
+// event, and wakes the workers once it commits.
 func enqueueDeliveries(ctx context.Context, tx pgx.Tx, eventID string, ev Event) error {
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO deliveries (org_id, event_id, event_received_at, webhook_id, destination_id)
 		SELECT org_id, $1, $2, webhook_id, id FROM destinations
-		WHERE webhook_id = $3 AND enabled`, eventID, ev.ReceivedAt, ev.WebhookID)
+		WHERE webhook_id = $3 AND enabled AND (cardinality(event_types) = 0 OR $4 = ANY(event_types))`,
+		eventID, ev.ReceivedAt, ev.WebhookID, ev.Type)
 	if err != nil || tag.RowsAffected() == 0 {
 		return err
 	}
@@ -269,7 +271,7 @@ func (h *Handler) lookup(ctx context.Context, token string) (*webhook, error) {
 	var wh webhook
 	err := h.Pool.QueryRow(ctx, `
 		SELECT id, org_id, project_id, provider, signing_secret_enc, signature_header
-		FROM webhooks WHERE ingest_token = $1`, token).
+		FROM webhooks WHERE ingest_token = $1 AND kind = 'inbound'`, token). // outbound webhooks take messages from the API only
 		Scan(&wh.ID, &wh.OrgID, &wh.ProjectID, &wh.Provider, &wh.SecretEnc, &wh.SignatureHeader)
 	var found *webhook
 	switch {

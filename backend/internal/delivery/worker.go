@@ -130,20 +130,21 @@ type target struct {
 	SecretEnc   []byte
 	TimeoutMS   int
 	MaxAttempts int
+	Scheme      string
 }
 
 // Load fetches the destination and event for a delivery.
 func (w *Worker) load(ctx context.Context, j job) (target, Request, error) {
 	var t target
 	err := w.Pool.QueryRow(ctx, `
-		SELECT url, enabled, signing_secret_enc, timeout_ms, max_attempts
+		SELECT url, enabled, signing_secret_enc, timeout_ms, max_attempts, signing_scheme
 		FROM destinations WHERE id = $1`, j.DestinationID).
-		Scan(&t.URL, &t.Enabled, &t.SecretEnc, &t.TimeoutMS, &t.MaxAttempts)
+		Scan(&t.URL, &t.Enabled, &t.SecretEnc, &t.TimeoutMS, &t.MaxAttempts, &t.Scheme)
 	if err != nil {
 		return t, Request{}, fmt.Errorf("load destination: %w", err)
 	}
 
-	r := Request{EventID: j.EventID, DeliveryID: j.ID, Attempt: j.Attempt, URL: t.URL, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond}
+	r := Request{EventID: j.EventID, DeliveryID: j.ID, Attempt: j.Attempt, URL: t.URL, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond, Scheme: t.Scheme}
 	if j.ReplayID != nil {
 		r.ReplayID = *j.ReplayID
 	}

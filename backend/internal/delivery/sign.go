@@ -41,6 +41,37 @@ func Sign(secret []byte, t time.Time, body []byte) string {
 	return fmt.Sprintf("t=%s,v1=%s", ts, hex.EncodeToString(m.Sum(nil)))
 }
 
+// Standard Webhooks (standardwebhooks.com), used for outbound endpoints so
+// receivers can verify with any Standard Webhooks / Svix library:
+//
+//	webhook-id: <message id>   webhook-timestamp: <unix>   webhook-signature: v1,<base64 HMAC>
+//
+// The HMAC-SHA256 covers "<id>.<timestamp>.<body>", keyed with the base64
+// part of a "whsec_" secret.
+
+const standardSecretPrefix = "whsec_"
+
+// NewStandardSecret returns a random Standard Webhooks secret.
+func NewStandardSecret() string {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return standardSecretPrefix + base64.StdEncoding.EncodeToString(b)
+}
+
+// SignStandard returns the webhook-signature header value.
+func SignStandard(secret []byte, msgID string, t time.Time, body []byte) string {
+	key, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(string(secret), standardSecretPrefix))
+	if err != nil {
+		key = secret
+	}
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte(msgID + "." + strconv.FormatInt(t.Unix(), 10) + "."))
+	m.Write(body)
+	return "v1," + base64.StdEncoding.EncodeToString(m.Sum(nil))
+}
+
 // Verify checks a Relaya-Signature header. Exported for tests and as the
 // reference implementation for customers.
 func Verify(secret []byte, header string, body []byte, now time.Time, tolerance time.Duration) bool {

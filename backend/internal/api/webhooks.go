@@ -26,18 +26,19 @@ type webhookView struct {
 	HasSecret       bool      `json:"has_signing_secret"`
 	SignatureHeader string    `json:"signature_header,omitempty"`
 	Status          string    `json:"status"`
+	Kind            string    `json:"kind"` // inbound, or outbound (an outbound app's messages)
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 const webhookCols = `id, org_id, project_id, name, provider, ingest_token,
-	signing_secret_enc IS NOT NULL, signature_header, status, created_at, updated_at`
+	signing_secret_enc IS NOT NULL, signature_header, status, kind, created_at, updated_at`
 
 func (s *Server) scanWebhook(row pgx.Row) (webhookView, error) {
 	var v webhookView
 	var token string
 	err := row.Scan(&v.ID, &v.OrgID, &v.ProjectID, &v.Name, &v.Provider, &token,
-		&v.HasSecret, &v.SignatureHeader, &v.Status, &v.CreatedAt, &v.UpdatedAt)
+		&v.HasSecret, &v.SignatureHeader, &v.Status, &v.Kind, &v.CreatedAt, &v.UpdatedAt)
 	v.IngestURL = s.IngestBaseURL + "/v1/in/" + token
 	return v, err
 }
@@ -54,7 +55,15 @@ func (s *Server) listWebhooks(w http.ResponseWriter, r *http.Request) error {
 			return httpx.BadRequest("invalid project_id")
 		}
 		args = append(args, pid)
-		q += ` AND project_id = $2`
+		q += ` AND project_id = $` + itoa(len(args))
+	}
+	switch k := r.URL.Query().Get("kind"); k {
+	case "", "all":
+	case "inbound", "outbound":
+		args = append(args, k)
+		q += ` AND kind = $` + itoa(len(args))
+	default:
+		return httpx.BadRequest("kind must be inbound, outbound or all")
 	}
 	rows, err := s.Pool.Query(r.Context(), q+` ORDER BY created_at`, args...)
 	if err != nil {

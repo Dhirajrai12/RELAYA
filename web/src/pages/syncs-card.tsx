@@ -334,7 +334,7 @@ function AddSyncForm({ onClose }: { onClose: () => void }) {
                 className="w-full"
                 value={webhookId}
                 onChange={setWebhookId}
-                options={[{ value: 'new', label: 'A new webhook' }, ...(webhooks.data?.data ?? []).map((w) => ({ value: w.id, label: w.name }))]}
+                options={[{ value: 'new', label: 'A new webhook' }, ...(webhooks.data?.data ?? []).filter((w) => w.kind !== 'outbound').map((w) => ({ value: w.id, label: w.name }))]}
               />
             </div>
           </div>

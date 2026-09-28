@@ -52,7 +52,7 @@ func (s *Server) planReplay(ctx context.Context, q pgx.Tx, incidentID string) (r
 		FROM ev
 		CROSS JOIN destinations d
 		LEFT JOIN deliveries dl ON dl.event_id = ev.event_id AND dl.destination_id = d.id
-		WHERE d.webhook_id = (SELECT webhook_id FROM incidents WHERE id = $1)
+		WHERE d.webhook_id = (SELECT webhook_id FROM incidents WHERE id = $1) AND (cardinality(d.event_types) = 0 OR (SELECT c.event_type FROM incidents i2 JOIN contracts c ON c.id = i2.contract_id WHERE i2.id = $1) = ANY(d.event_types))
 		GROUP BY d.id, d.name, d.url, d.enabled, d.created_at
 		ORDER BY d.created_at`, incidentID)
 	if err != nil {
@@ -158,7 +158,7 @@ func (s *Server) startReplay(w http.ResponseWriter, r *http.Request) error {
 			INSERT INTO deliveries (org_id, event_id, event_received_at, webhook_id, destination_id, status, next_attempt_at, replay_id)
 			SELECT $2, ev.event_id, ev.event_received_at, d.webhook_id, d.id, 'pending', now(), $3
 			FROM ev CROSS JOIN destinations d
-			WHERE d.webhook_id = (SELECT webhook_id FROM incidents WHERE id = $1) AND d.enabled
+			WHERE d.webhook_id = (SELECT webhook_id FROM incidents WHERE id = $1) AND d.enabled AND (cardinality(d.event_types) = 0 OR (SELECT c.event_type FROM incidents i2 JOIN contracts c ON c.id = i2.contract_id WHERE i2.id = $1) = ANY(d.event_types))
 			ON CONFLICT (event_id, destination_id) DO UPDATE
 			SET status = 'pending', next_attempt_at = now(), attempts = 0, completed_at = NULL,
 			    last_error = '', replay_id = EXCLUDED.replay_id

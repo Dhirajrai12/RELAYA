@@ -103,6 +103,17 @@ func (s *Server) Routes() http.Handler {
 	public.Handle("POST /v1/auth/login", httpx.HandlerFunc(s.login))
 	// Authenticates with its first message, so it sits outside the auth middleware.
 	public.HandleFunc("GET /v1/orgs/{org}/stream", s.stream)
+	// The outbound portal's users have no Relaya login: the portal token is the credential.
+	public.Handle("GET /v1/portal/app", httpx.HandlerFunc(s.portalInfo))
+	public.Handle("GET /v1/portal/endpoints", httpx.HandlerFunc(s.portalListEndpoints))
+	public.Handle("POST /v1/portal/endpoints", httpx.HandlerFunc(s.portalCreateEndpoint))
+	public.Handle("PATCH /v1/portal/endpoints/{endpoint}", httpx.HandlerFunc(s.portalUpdateEndpoint))
+	public.Handle("DELETE /v1/portal/endpoints/{endpoint}", httpx.HandlerFunc(s.portalDeleteEndpoint))
+	public.Handle("GET /v1/portal/endpoints/{endpoint}/secret", httpx.HandlerFunc(s.portalEndpointSecret))
+	public.Handle("POST /v1/portal/endpoints/{endpoint}/rotate-secret", httpx.HandlerFunc(s.portalRotateSecret))
+	public.Handle("POST /v1/portal/endpoints/{endpoint}/test", httpx.HandlerFunc(s.portalTestEndpoint))
+	public.Handle("GET /v1/portal/deliveries", httpx.HandlerFunc(s.portalDeliveries))
+	public.Handle("POST /v1/portal/deliveries/{delivery}/retry", httpx.HandlerFunc(s.portalRetry))
 	if s.Connect != nil {
 		// The Connect page's end users have no Relaya login: the link token is the credential.
 		public.Handle("GET /v1/connect/sessions/{token}", httpx.HandlerFunc(s.getConnectSession))
@@ -183,6 +194,21 @@ func (s *Server) Routes() http.Handler {
 	h("GET /v1/orgs/{org}/incidents/{incident}/repair-suggestion", s.repairSuggestion)
 
 	h("GET /v1/orgs/{org}/audit-logs", s.listAuditLogs)
+
+	h("GET /v1/orgs/{org}/outbound/apps", s.listOutboundApps)
+	h("POST /v1/orgs/{org}/outbound/apps", s.createOutboundApp)
+	h("GET /v1/orgs/{org}/outbound/apps/{app}", s.getOutboundApp)
+	h("DELETE /v1/orgs/{org}/outbound/apps/{app}", s.deleteOutboundApp)
+	h("POST /v1/orgs/{org}/outbound/apps/{app}/endpoints", s.createOutboundEndpoint)
+	h("PATCH /v1/orgs/{org}/outbound/apps/{app}/endpoints/{endpoint}", s.updateOutboundEndpoint)
+	h("DELETE /v1/orgs/{org}/outbound/apps/{app}/endpoints/{endpoint}", s.deleteOutboundEndpoint)
+	h("GET /v1/orgs/{org}/outbound/apps/{app}/endpoints/{endpoint}/secret", s.outboundEndpointSecret)
+	h("POST /v1/orgs/{org}/outbound/apps/{app}/endpoints/{endpoint}/test", s.testOutboundEndpoint)
+	h("POST /v1/orgs/{org}/outbound/apps/{app}/portal-link", s.createPortalLink)
+	h("POST /v1/orgs/{org}/outbound/messages", s.sendOutboundMessage)
+	h("GET /v1/orgs/{org}/outbound/event-types", s.listOutboundEventTypes)
+	h("POST /v1/orgs/{org}/outbound/event-types", s.upsertOutboundEventType)
+	h("DELETE /v1/orgs/{org}/outbound/event-types/{name}", s.deleteOutboundEventType)
 
 	if s.Connect != nil {
 		h("GET /v1/connect/providers", s.listConnectProviders)

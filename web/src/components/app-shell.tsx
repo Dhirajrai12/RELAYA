@@ -9,6 +9,7 @@ import {
   PlugIcon,
   RocketIcon,
   ScrollTextIcon,
+  SendIcon,
   UsersIcon,
   WebhookIcon,
   ShieldAlertIcon,
@@ -39,6 +40,7 @@ const nav = [
   { to: '/webhooks', label: 'Webhooks', icon: WebhookIcon },
   { to: '/contracts', label: 'Contracts', icon: FileCheck2Icon },
   { to: '/connections', label: 'Connections', icon: PlugIcon },
+  { to: '/outbound', label: 'Outbound', icon: SendIcon },
   { to: '/projects', label: 'Projects', icon: FolderIcon },
 ]
 

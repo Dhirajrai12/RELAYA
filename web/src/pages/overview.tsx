@@ -28,7 +28,7 @@ export function OverviewPage() {
   if (stats.isPending || webhooks.isPending || projects.isPending) return <OverviewSkeleton />
 
   const s = stats.data
-  const hooks = webhooks.data?.data ?? []
+  const hooks = (webhooks.data?.data ?? []).filter((w) => w.kind !== 'outbound')
   const total = s.totals.received + s.totals.rejected
   const everReceived = s.webhooks.some((w) => w.last_received_at)
   const lastAt = s.webhooks.map((w) => w.last_received_at).filter(Boolean).sort().at(-1) ?? null

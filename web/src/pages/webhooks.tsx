@@ -20,7 +20,8 @@ import { useCanManage } from '@/lib/role'
 
 export function WebhooksPage() {
   const webhooks = useWebhooks()
-  const paged = usePaged(webhooks.data?.data ?? [])
+  const inbound = (webhooks.data?.data ?? []).filter((w) => w.kind !== 'outbound') // outbound ones live under Outbound
+  const paged = usePaged(inbound)
   const prefetch = usePrefetchWebhook()
   const projects = useProjects()
   const canManage = useCanManage()
@@ -46,7 +47,7 @@ export function WebhooksPage() {
         <ErrorState error={webhooks.error} />
       ) : webhooks.isPending ? (
         <Skeleton className="h-40 w-full" />
-      ) : webhooks.data.data.length === 0 ? (
+      ) : inbound.length === 0 ? (
         <EmptyState title="No webhooks yet" action={createButton}>
           Create a webhook URL, paste it into your provider's dashboard, and every delivery will show up in Events.
         </EmptyState>

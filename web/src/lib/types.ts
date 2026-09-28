@@ -49,6 +49,8 @@ export interface Webhook {
   has_signing_secret: boolean
   signature_header?: string
   status: 'active' | 'paused'
+  /** outbound: holds an outbound app's messages (managed under Outbound) */
+  kind: 'inbound' | 'outbound'
   created_at: string
   updated_at: string
 }
@@ -146,6 +148,8 @@ export interface Destination {
   enabled: boolean
   timeout_ms: number
   max_attempts: number
+  /** only these event types are sent here (empty = all) */
+  event_types: string[]
   created_at: string
   updated_at: string
   stats: {
@@ -568,4 +572,68 @@ export interface SyncRun {
   created: number
   updated: number
   error: string
+}
+
+// ---- outbound webhooks ------------------------------------------------------------
+
+export interface OutboundApp {
+  id: string
+  /** your ID for this customer */
+  uid: string
+  name: string
+  webhook_id: string
+  endpoints: number
+  messages_24h: number
+  failed_24h: number
+  created_at: string
+}
+
+export interface OutboundEndpoint {
+  id: string
+  url: string
+  description: string
+  event_types: string[]
+  enabled: boolean
+  created_at: string
+  succeeded_24h: number
+  failed_24h: number
+  retrying: number
+  last_success_at: string | null
+}
+
+export interface OutboundEventType {
+  name: string
+  description: string
+  created_at: string
+}
+
+export interface EndpointTestResult {
+  ok: boolean
+  status_code: number
+  duration_ms: number
+  response_body: string
+  error: string
+}
+
+export interface PortalInfo {
+  org_name: string
+  app: { uid: string; name: string }
+  event_types: OutboundEventType[]
+  expires_at: string
+}
+
+export interface PortalDelivery {
+  id: string
+  message_id: string
+  event_type: string
+  endpoint_id: string
+  endpoint_url: string
+  status: 'pending' | 'in_flight' | 'retrying' | 'succeeded' | 'failed'
+  attempts: number
+  last_status_code: number | null
+  last_error: string
+  next_attempt_at: string
+  created_at: string
+  completed_at: string | null
+  last_response: string
 }

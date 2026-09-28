@@ -86,6 +86,20 @@ var orgRoutes = []struct {
 	{"DELETE", "/v1/orgs/{org}/connections/{connection}/proxy/{path...}", "admin"},
 	{"GET", "/v1/orgs/{org}/proxy-calls", "member"},
 	{"GET", "/v1/orgs/{org}/contracts/{contract}/findings", "member"},
+	{"GET", "/v1/orgs/{org}/outbound/apps", "member"},
+	{"POST", "/v1/orgs/{org}/outbound/apps", "admin"},
+	{"GET", "/v1/orgs/{org}/outbound/apps/{app}", "member"},
+	{"DELETE", "/v1/orgs/{org}/outbound/apps/{app}", "admin"},
+	{"POST", "/v1/orgs/{org}/outbound/apps/{app}/endpoints", "admin"},
+	{"PATCH", "/v1/orgs/{org}/outbound/apps/{app}/endpoints/{endpoint}", "admin"},
+	{"DELETE", "/v1/orgs/{org}/outbound/apps/{app}/endpoints/{endpoint}", "admin"},
+	{"GET", "/v1/orgs/{org}/outbound/apps/{app}/endpoints/{endpoint}/secret", "admin"},
+	{"POST", "/v1/orgs/{org}/outbound/apps/{app}/endpoints/{endpoint}/test", "admin"},
+	{"POST", "/v1/orgs/{org}/outbound/apps/{app}/portal-link", "admin"},
+	{"POST", "/v1/orgs/{org}/outbound/messages", "admin"},
+	{"GET", "/v1/orgs/{org}/outbound/event-types", "member"},
+	{"POST", "/v1/orgs/{org}/outbound/event-types", "admin"},
+	{"DELETE", "/v1/orgs/{org}/outbound/event-types/{name}", "admin"},
 	{"GET", "/v1/orgs/{org}/syncs", "member"},
 	{"POST", "/v1/orgs/{org}/syncs", "admin"},
 	{"PATCH", "/v1/orgs/{org}/syncs/{sync}", "admin"},
@@ -167,12 +181,16 @@ func TestPermissions(t *testing.T) {
 	}
 	syncID := e.call("POST", base+"/syncs", owner, map[string]any{"connection_id": connection, "model": "hubspot.crm_objects",
 		"config": map[string]string{"object": "contacts"}, "webhook_id": wh["id"]}, 201)["id"].(string)
+	e.call("POST", base+"/outbound/apps", owner, map[string]any{"uid": "acme"}, 201)
+	endpoint := e.call("POST", base+"/outbound/apps/acme/endpoints", owner, map[string]any{"url": rc.srv.URL}, 201)["endpoint"].(map[string]any)["id"].(string)
+	e.call("POST", base+"/outbound/event-types", owner, map[string]any{"name": "invoice.paid"}, 200)
 
 	ids := map[string]string{
 		"{org}": orgID, "{user}": adminID, "{key}": adminKey["api_key"].(map[string]any)["id"].(string), "{project}": proj,
 		"{webhook}": wh["id"].(string), "{event}": eventID, "{destination}": dest, "{delivery}": delivery,
 		"{contract}": contract, "{incident}": incident, "{channel}": channel, "{rule}": rule,
 		"{integration}": integration, "{connection}": connection, "{path...}": "v1/anything", "{sync}": syncID,
+		"{app}": "acme", "{endpoint}": endpoint, "{name}": "invoice.paid",
 	}
 	status := func(method, path, token string) (int, string) {
 		req, _ := http.NewRequest(method, e.api.URL+path, bytes.NewBufferString("{}"))

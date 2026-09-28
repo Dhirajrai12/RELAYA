@@ -88,6 +88,7 @@ function DestinationRow({ d, onSecret }: { d: Destination; onSecret: (s: string)
             {!d.enabled && <Badge variant="outline">disabled</Badge>}
           </div>
           <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{d.url}</div>
+          {d.event_types?.length > 0 && <div className="mt-0.5 break-words text-xs text-muted-foreground">Only {d.event_types.join(', ')}</div>}
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
             <span className="text-emerald-700 dark:text-emerald-400">{s.succeeded_24h} delivered (24h)</span>
             <span className={s.failed_24h ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground'}>{s.failed_24h} failed</span>
@@ -193,6 +194,9 @@ function AddDestinationDialog({
         name: String(f.get('name')),
         url: String(f.get('url')),
         max_attempts: Number(f.get('max_attempts')) || 8,
+        event_types: String(f.get('event_types') ?? '')
+          .split(/[\s,]+/)
+          .filter(Boolean),
       })
       onOpenChange(false)
       onCreated(res.signing_secret)
@@ -222,6 +226,11 @@ function AddDestinationDialog({
             <Label htmlFor="d-attempts">Maximum attempts</Label>
             <Input id="d-attempts" name="max_attempts" type="number" min={1} max={20} defaultValue={8} />
             <p className="text-xs text-muted-foreground">Retries back off: 30s, 2m, 10m, 30m, 1h, 3h, 6h.</p>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="d-types">Only these event types (optional)</Label>
+            <Input id="d-types" name="event_types" placeholder="payment.captured, refund.processed" className="font-mono text-xs" />
+            <p className="text-xs text-muted-foreground">Leave empty to forward every event.</p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>

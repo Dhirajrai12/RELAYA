@@ -31,6 +31,8 @@ const pages = {
   connections: () => import('@/pages/connections'),
   connect: () => import('@/pages/connect'),
   quickstart: () => import('@/pages/quickstart'),
+  outbound: () => import('@/pages/outbound'),
+  portal: () => import('@/pages/portal'),
 }
 const LandingPage = lazy(() => pages.landing().then((m) => ({ default: m.LandingPage })))
 const OverviewPage = lazy(() => pages.overview().then((m) => ({ default: m.OverviewPage })))
@@ -48,6 +50,9 @@ const AuditPage = lazy(() => pages.settings().then((m) => ({ default: m.AuditPag
 const ContractsPage = lazy(() => pages.contracts().then((m) => ({ default: m.ContractsPage })))
 const ContractDetailPage = lazy(() => pages.contractDetail().then((m) => ({ default: m.ContractDetailPage })))
 const IncidentsPage = lazy(() => pages.incidents().then((m) => ({ default: m.IncidentsPage })))
+const OutboundPage = lazy(() => pages.outbound().then((m) => ({ default: m.OutboundPage })))
+const OutboundAppPage = lazy(() => pages.outbound().then((m) => ({ default: m.OutboundAppPage })))
+const PortalPage = lazy(() => pages.portal().then((m) => ({ default: m.PortalPage })))
 const QuickstartPage = lazy(() => pages.quickstart().then((m) => ({ default: m.QuickstartPage })))
 const ConnectionsPage = lazy(() => pages.connections().then((m) => ({ default: m.ConnectionsPage })))
 const ConnectPage = lazy(() => pages.connect().then((m) => ({ default: m.ConnectPage })))
@@ -57,7 +62,7 @@ const ConnectResultPage = lazy(() => pages.connect().then((m) => ({ default: m.C
 function usePreloadDashboard() {
   useEffect(() => {
     const run = () => {
-      for (const [name, load] of Object.entries(pages)) if (name !== 'landing' && name !== 'public' && name !== 'connect') void load()
+      for (const [name, load] of Object.entries(pages)) if (name !== 'landing' && name !== 'public' && name !== 'connect' && name !== 'portal') void load()
     }
     const id = setTimeout(run, 1200) // after the first page has rendered
     return () => clearTimeout(id)
@@ -79,6 +84,8 @@ export default function App() {
         <Route path="/security" element={<SecurityPage />} />
         {/* Connect links, opened by our customers' own users (no Relaya login). */}
         <Route path="/connect/result" element={<ConnectResultPage />} />
+        {/* Outbound webhooks portal, opened by our customers' customers (token in the URL fragment). */}
+        <Route path="/portal" element={<PortalPage />} />
         <Route path="/connect/:token" element={<ConnectPage />} />
         <Route path="/*" element={token ? <SignedIn /> : <Navigate to="/login" replace />} />
       </Routes>
@@ -117,6 +124,8 @@ function SignedIn() {
         <Route path="incidents" element={<IncidentsPage />} />
         <Route path="connections" element={<ConnectionsPage />} />
         <Route path="quickstart" element={<QuickstartPage />} />
+        <Route path="outbound" element={<OutboundPage />} />
+        <Route path="outbound/:app" element={<OutboundAppPage />} />
         <Route path="settings/members" element={<MembersPage />} />
         <Route path="settings/api-keys" element={<AdminOnly><ApiKeysPage /></AdminOnly>} />
         <Route path="settings/alerts" element={<AlertsPage />} />

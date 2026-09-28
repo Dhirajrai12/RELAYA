@@ -73,6 +73,7 @@ function keysFor(orgId: string, m: Message): QueryKey[] {
         integration: [['integrations', orgId], ['connections', orgId]],
         connection: [['connections', orgId], ['integrations', orgId], ['syncs', orgId]],
         sync: [['syncs', orgId]],
+        outbound: [['outbound-apps', orgId], ['outbound-app', orgId], ['outbound-event-types', orgId]],
       }
       return keys.concat(map[area] ?? [])
     }
