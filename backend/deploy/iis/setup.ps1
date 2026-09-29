@@ -91,7 +91,8 @@ if (Test-Path (Join-Path $WebDist 'index.html')) {
   Write-Host "    no dashboard build at $WebDist (run npm run build in web\) - skipped" -ForegroundColor Yellow
 }
 # The dashboard (DASHBOARD_URL) and the API/webhooks (INGEST_BASE_URL) can each have their own
-# domain; $HostName keeps serving everything, so URLs already given out keep working.
+# domain. Every host bound to the site keeps serving ingest and the API, so URLs already given
+# out keep working; dashboard pages on any host but DASHBOARD_URL's redirect there.
 function EnvHost($name) {
   $line = Get-Content $envFile | Where-Object { $_ -match "^\s*$name\s*=" } | Select-Object -Last 1
   if (-not $line) { return $HostName }
@@ -101,7 +102,7 @@ function EnvHost($name) {
 $dashHost = EnvHost 'DASHBOARD_URL'
 $apiHost = EnvHost 'INGEST_BASE_URL'
 $config = Get-Content (Join-Path $PSScriptRoot 'web.config') -Raw
-if ($apiHost -eq $HostName) {
+if ($apiHost -eq $dashHost) {
   $config = $config -replace '(?s)\s*<!--API-HOST.*?<!--/API-HOST-->', ''
 } else {
   $config = $config.Replace('__API_HOST__', $apiHost).Replace('__API_HOST_RE__', [regex]::Escape($apiHost))
@@ -111,10 +112,9 @@ if ($dashHost -eq $HostName) {
   $config = $config -replace '(?s)\s*<!--DASHBOARD-MOVED.*?<!--/DASHBOARD-MOVED-->', ''
   $wss = "wss://$HostName"
 } else {
-  $others = @($HostName, $apiHost) | Where-Object { $_ -ne $dashHost } | Select-Object -Unique
-  $config = $config.Replace('__DASHBOARD_HOST__', $dashHost).Replace('__HOST_RE__', '(' + (($others | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')')
+  $config = $config.Replace('__DASHBOARD_HOST_RE__', [regex]::Escape($dashHost)).Replace('__DASHBOARD_HOST__', $dashHost)
   $wss = "wss://$HostName wss://$dashHost"
-  Write-Host "    dashboard at https://$dashHost (pages on $($others -join ', ') redirect there)"
+  Write-Host "    dashboard at https://$dashHost (its pages on other hosts redirect there)"
 }
 $config.Replace('wss://__HOST__', $wss) | Set-Content (Join-Path $site 'web.config') -Encoding UTF8 -NoNewline
 
@@ -207,7 +207,7 @@ $checks = @(
   @{ Name = 'api via IIS';    Url = 'http://127.0.0.1/api/readyz';  Host = $HostName }
 )
 if ($dashHost -ne $HostName) { $checks += @{ Name = 'dashboard API'; Url = 'http://127.0.0.1/api/readyz'; Host = $dashHost } }
-if ($apiHost -ne $HostName) { $checks += @{ Name = 'API domain'; Url = 'http://127.0.0.1/readyz'; Host = $apiHost } }
+if ($apiHost -ne $dashHost) { $checks += @{ Name = 'API domain'; Url = 'http://127.0.0.1/readyz'; Host = $apiHost } }
 foreach ($c in $checks) {
   # curl.exe ships with Server 2019+; Invoke-WebRequest in PS 5.1 cannot set the Host header.
   $curlArgs = @('-s', '-o', 'NUL', '-w', '%{http_code}', '--max-time', '5', $c.Url)
@@ -216,5 +216,5 @@ foreach ($c in $checks) {
   $color = if ($code -eq '200') { 'Green' } else { 'Red' }
   Write-Host ("    {0,-15} {1}" -f $c.Name, $code) -ForegroundColor $color
 }
-$apiURL = if ($apiHost -eq $HostName) { "https://$HostName/api/v1/..." } else { "https://$apiHost/v1/..." }
+$apiURL = if ($apiHost -eq $dashHost) { "https://$apiHost/api/v1/..." } else { "https://$apiHost/v1/..." }
 Write-Host "Done. Webhook URLs will look like https://$apiHost/v1/in/<token>; API at $apiURL; dashboard at https://$dashHost/"
