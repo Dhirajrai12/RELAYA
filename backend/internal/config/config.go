@@ -119,7 +119,7 @@ func Load() (Config, error) {
 	if c.SMTPPort, err = strconv.Atoi(get("SMTP_PORT", "587")); err != nil {
 		return c, fmt.Errorf("SMTP_PORT: %w", err)
 	}
-	if c.SessionTTL, err = time.ParseDuration(get("SESSION_TTL", "720h")); err != nil {
+	if c.SessionTTL, err = time.ParseDuration(get("SESSION_TTL", "168h")); err != nil {
 		return c, fmt.Errorf("SESSION_TTL: %w", err)
 	}
 

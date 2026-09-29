@@ -45,6 +45,8 @@ const ApiKeysPage = lazy(() => pages.settings().then((m) => ({ default: m.ApiKey
 const DocsPage = lazy(() => pages.public().then((m) => ({ default: m.DocsPage })))
 const StatusPage = lazy(() => pages.public().then((m) => ({ default: m.StatusPage })))
 const SecurityPage = lazy(() => pages.public().then((m) => ({ default: m.SecurityPage })))
+const TermsPage = lazy(() => pages.public().then((m) => ({ default: m.TermsPage })))
+const PrivacyPage = lazy(() => pages.public().then((m) => ({ default: m.PrivacyPage })))
 const AlertsPage = lazy(() => pages.alerts().then((m) => ({ default: m.AlertsPage })))
 const AuditPage = lazy(() => pages.settings().then((m) => ({ default: m.AuditPage })))
 const ContractsPage = lazy(() => pages.contracts().then((m) => ({ default: m.ContractsPage })))
@@ -82,6 +84,8 @@ export default function App() {
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/status" element={<StatusPage />} />
         <Route path="/security" element={<SecurityPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
         {/* Connect links, opened by our customers' own users (no Relaya login). */}
         <Route path="/connect/result" element={<ConnectResultPage />} />
         {/* Outbound webhooks portal, opened by our customers' customers (token in the URL fragment). */}

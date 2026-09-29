@@ -679,7 +679,7 @@ export function Footer() {
           </div>
           <p className="mt-3 text-sm text-l-subtle">The control plane for integrations: know first, fix safely.</p>
         </div>
-        <div className="grid grid-cols-2 gap-10 text-sm">
+        <div className="grid grid-cols-2 gap-10 text-sm sm:grid-cols-3">
           <div>
             <div className="mb-3 font-medium text-l-text">Product</div>
             <ul className="space-y-2">
@@ -705,6 +705,22 @@ export function Footer() {
                   Log in
                 </Link>
               </li>
+            </ul>
+          </div>
+          <div>
+            <div className="mb-3 font-medium text-l-text">Legal</div>
+            <ul className="space-y-2">
+              {[
+                ['/terms', 'Terms of Service'],
+                ['/privacy', 'Privacy Policy'],
+                ['/security', 'Security'],
+              ].map(([to, label]) => (
+                <li key={to}>
+                  <Link to={to} className="transition hover:text-l-text">
+                    {label}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
         </div>
