@@ -61,11 +61,11 @@ const orgPath = (orgId: string, rest = '') => `/orgs/${orgId}${rest}`
 // ---- account ----------------------------------------------------------------
 
 export function useMe() {
-  const token = useAuth((s) => s.token)
+  const userId = useAuth((s) => s.user?.id ?? null)
   return useQuery({
-    queryKey: ['me', token],
+    queryKey: ['me', userId],
     queryFn: () => get<{ user: User; orgs: Org[] }>('/me'),
-    enabled: !!token,
+    enabled: !!userId,
   })
 }
 

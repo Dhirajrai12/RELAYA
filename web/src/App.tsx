@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { errorMessage } from '@/lib/api'
-import { useAuth } from '@/lib/auth'
+import { useAuth, useSignedIn } from '@/lib/auth'
 import { useCreateOrg, useMe } from '@/lib/queries'
 import { useHasRole } from '@/lib/role'
 import { LoginPage, SignupPage } from '@/pages/auth'
@@ -72,14 +72,14 @@ function usePreloadDashboard() {
 }
 
 export default function App() {
-  const token = useAuth((s) => s.token)
+  const signedIn = useSignedIn()
   return (
     <Suspense fallback={<div className="min-h-svh" />}>
       <Routes>
-        <Route path="/login" element={token ? <Navigate to="/overview" replace /> : <LoginPage />} />
-        <Route path="/signup" element={token ? <Navigate to="/overview" replace /> : <SignupPage />} />
+        <Route path="/login" element={signedIn ? <Navigate to="/overview" replace /> : <LoginPage />} />
+        <Route path="/signup" element={signedIn ? <Navigate to="/overview" replace /> : <SignupPage />} />
         {/* Signed-out visitors land on the marketing page; signed-in users go to the app. */}
-        <Route path="/" element={token ? <Navigate to="/overview" replace /> : <LandingPage />} />
+        <Route path="/" element={signedIn ? <Navigate to="/overview" replace /> : <LandingPage />} />
         {/* Public pages, signed in or not. */}
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/status" element={<StatusPage />} />
@@ -91,7 +91,7 @@ export default function App() {
         {/* Outbound webhooks portal, opened by our customers' customers (token in the URL fragment). */}
         <Route path="/portal" element={<PortalPage />} />
         <Route path="/connect/:token" element={<ConnectPage />} />
-        <Route path="/*" element={token ? <SignedIn /> : <Navigate to="/login" replace />} />
+        <Route path="/*" element={signedIn ? <SignedIn /> : <Navigate to="/login" replace />} />
       </Routes>
     </Suspense>
   )

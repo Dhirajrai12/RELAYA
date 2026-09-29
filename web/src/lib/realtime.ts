@@ -89,11 +89,11 @@ function keysFor(orgId: string, m: Message): QueryKey[] {
  */
 export function useRealtime(orgId: string | null) {
   const qc = useQueryClient()
-  const token = useAuth((s) => s.token)
+  const signedIn = useAuth((s) => s.user !== null)
   const setStatus = useRealtimeStatus((s) => s.set)
 
   useEffect(() => {
-    if (!orgId || !token) return
+    if (!orgId || !signedIn) return
     let ws: WebSocket | null = null
     let retry = 0
     let stopped = false
@@ -117,7 +117,8 @@ export function useRealtime(orgId: string | null) {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws'
       const base = (import.meta.env.VITE_API_BASE ?? '/api/v1').replace(/\/$/, '')
       ws = new WebSocket(`${proto}://${location.host}${base}/orgs/${orgId}/stream`)
-      ws.onopen = () => ws?.send(JSON.stringify({ type: 'auth', token }))
+      // The session cookie went with the upgrade request; an empty token tells the server to use it.
+      ws.onopen = () => ws?.send(JSON.stringify({ type: 'auth' }))
       ws.onmessage = (ev) => {
         let m: Message
         try {
@@ -166,5 +167,5 @@ export function useRealtime(orgId: string | null) {
       ws?.close()
       setStatus('connecting')
     }
-  }, [orgId, token, qc, setStatus])
+  }, [orgId, signedIn, qc, setStatus])
 }

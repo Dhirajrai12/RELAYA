@@ -91,22 +91,30 @@ type Service struct {
 	SessionTTL time.Duration
 }
 
-// Middleware requires a valid bearer token (from cookie or Authorization header) and stores the Principal in the context.
+// SessionCookie holds the dashboard's session token (httpOnly, set on sign-in).
+const SessionCookie = "relaya_session"
+
+// RequestToken is the caller's token: an explicit Authorization bearer (API keys,
+// SDKs, the CLI, scripts) wins over the dashboard's session cookie.
+func RequestToken(r *http.Request) string {
+	if t, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && strings.TrimSpace(t) != "" {
+		return strings.TrimSpace(t)
+	}
+	if c, err := r.Cookie(SessionCookie); err == nil {
+		return strings.TrimSpace(c.Value)
+	}
+	return ""
+}
+
+// Middleware requires a valid token (Authorization header or session cookie) and stores the Principal in the context.
 func (s *Service) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Try cookie first (new way), then Authorization header (for API clients)
-		var token string
-		if cookie, err := r.Cookie("relaya_session"); err == nil {
-			token = cookie.Value
-		} else {
-			var ok bool
-			token, ok = strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if !ok || token == "" {
-				httpx.WriteError(w, r, httpx.ErrUnauthorized)
-				return
-			}
+		token := RequestToken(r)
+		if token == "" {
+			httpx.WriteError(w, r, httpx.ErrUnauthorized)
+			return
 		}
-		p, err := s.authenticate(r.Context(), strings.TrimSpace(token))
+		p, err := s.authenticate(r.Context(), token)
 		if err != nil {
 			httpx.WriteError(w, r, err)
 			return

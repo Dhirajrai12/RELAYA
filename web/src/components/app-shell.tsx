@@ -140,7 +140,7 @@ function SidebarContent({ orgs, onNavigate }: { orgs: Org[]; onNavigate?: () => 
 
       <div className="shrink-0 space-y-3 border-t pt-3">
         <div className="flex items-center gap-2.5 px-1">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-sm font-semibold text-brand-foreground dark:text-brand">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-sm font-semibold text-primary dark:text-brand">
             {(user?.name || user?.email || '?').charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">

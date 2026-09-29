@@ -63,6 +63,14 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		c.Close(websocket.StatusPolicyViolation, "expected an auth message")
 		return
 	}
+	// The dashboard sends an empty token: its session is the httpOnly cookie that
+	// came with the upgrade request (SameSite=Strict, and foreign origins are
+	// refused above, so other sites can't open a stream with it).
+	if hello.Token == "" {
+		if c, err := r.Cookie(auth.SessionCookie); err == nil {
+			hello.Token = c.Value
+		}
+	}
 	if err := s.authorizeStream(r.Context(), hello.Token, orgID); err != nil {
 		c.Close(websocket.StatusPolicyViolation, "unauthorized")
 		return

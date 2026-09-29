@@ -643,7 +643,6 @@ interface TryResult {
 
 function TryCallForm({ c }: { c: Connection }) {
   const orgId = useAuth((s) => s.orgId)
-  const token = useAuth((s) => s.token)
   const providers = useConnectProviders()
   const qc = useQueryClient()
   const example = tryExamples[c.provider]
@@ -663,7 +662,8 @@ function TryCallForm({ c }: { c: Connection }) {
     setResult(null)
     const started = performance.now()
     try {
-      const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+      // Signed in by the session cookie, which the browser sends with this same-origin call.
+      const headers: Record<string, string> = { Accept: 'application/json' }
       if (base.trim()) headers['Relaya-Proxy-Base-Url'] = base.trim()
       const send = hasBody && body.trim() !== ''
       if (send) headers['Content-Type'] = 'application/json'
