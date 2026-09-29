@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { CopyButton, PageHeader } from '@/components/common'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PUBLIC_API } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 type Lang = 'node' | 'python' | 'php'
@@ -60,8 +61,7 @@ export function QuickstartPage() {
     }
   }
   const origin = location.origin
-  const hosted = origin === 'https://server.aegonassett.com' || origin === 'https://relaya.sbs'
-  const base = hosted ? '' : origin + '/api'
+  const base = PUBLIC_API
   const info = LANGS.find((l) => l.key === lang)!
 
   const client = {

@@ -58,6 +58,14 @@ The script is idempotent: re-run it to upgrade (it stops services, copies binari
 - turns off IIS logging for `/v1/in` so webhook tokens never land in IIS logs;
 - server-wide, additive only: enables the ARR proxy if off, and allows the `HTTP_X_REAL_IP` server variable.
 
+**Separate domains.** The dashboard and the API can each have their own domain, read from `bin\.env` by `setup.ps1`:
+
+- `DASHBOARD_URL=https://relaya.sbs`: dashboard pages on the other hosts redirect there.
+- `INGEST_BASE_URL=https://api.relaya.sbs`: webhook URLs use it, and it serves the API without the prefix (`https://api.relaya.sbs/v1/...`).
+- `CONNECT_REDIRECT_URI`: set it explicitly to keep the OAuth callback that is already registered in providers' apps.
+
+The `-HostName` host keeps serving everything, so URLs already given out keep working. Each new domain needs a DNS `A` record to the server and a certificate (win-acme, `--source iis --siteid <id> --host ...`). Re-run `setup.ps1` after changing these values.
+
 Notes:
 
 - IIS overwrites `X-Real-IP` with the real client address, so it can't be spoofed. ARR's `X-Forwarded-For` (which includes the port) is only a fallback, and only its last entry is trusted.

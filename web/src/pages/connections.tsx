@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { errorMessage } from '@/lib/api'
+import { errorMessage, PUBLIC_API } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { dateTime, timeAgo } from '@/lib/format'
 import {
@@ -588,7 +588,7 @@ function ConnectionRow({ c, onReconnect, onTry }: { c: Connection; onReconnect: 
 
 function UsageCard() {
   const orgId = useAuth((s) => s.orgId)
-  const api = `${location.origin}/api/v1/orgs/${orgId}`
+  const api = `${PUBLIC_API}/v1/orgs/${orgId}`
   const snippet = `# 1. Your backend creates a link for a user (API key with admin role)
 curl -X POST ${api}/connect-sessions \\
   -H "Authorization: Bearer $RELAYA_API_KEY" \\

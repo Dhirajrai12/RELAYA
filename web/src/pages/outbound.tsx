@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { errorMessage } from '@/lib/api'
+import { errorMessage, PUBLIC_API } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { dateTime, timeAgo } from '@/lib/format'
 import {
@@ -228,7 +228,7 @@ function EventTypesCard() {
 
 function OutboundUsageCard() {
   const orgId = useAuth((s) => s.orgId)
-  const api = `${location.origin}/api/v1/orgs/${orgId}/outbound`
+  const api = `${PUBLIC_API}/v1/orgs/${orgId}/outbound`
   const snippet = `# When a customer signs up: create their app (your ID for them)
 curl -X POST ${api}/apps -H "Authorization: Bearer $RELAYA_API_KEY" \\
   -d '{"uid":"customer-123","name":"Acme Corp"}'

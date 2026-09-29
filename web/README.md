@@ -6,7 +6,7 @@ React 19 + TypeScript + Vite, Tailwind CSS v4, shadcn/ui (Base UI), TanStack Que
 
 ```sh
 npm install
-npm run dev          # http://localhost:5173, /api proxied to https://server.aegonassett.com
+npm run dev          # http://localhost:5173, /api proxied to https://relaya.sbs
 ```
 
 Against a Go API running locally instead:
@@ -21,7 +21,7 @@ API_PROXY_TARGET=http://localhost:8080 npm run dev
 npm run build        # outputs dist/
 ```
 
-Production is served by the same IIS site as the API (`https://server.aegonassett.com/`), so there is no CORS.
+Production is served by the same IIS site as the API (`https://relaya.sbs/`), so there is no CORS.
 `backend/deploy/iis/setup.ps1` copies `web/dist` into the site on every run. For a dashboard-only update, copying `dist\*` into `C:\relaya\site` is enough; no service restart is needed.
 
 ## Layout

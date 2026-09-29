@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { C, Code, PublicPage, Table } from './layout'
 
-const API = 'https://server.aegonassett.com/api/v1'
+const API = 'https://api.relaya.sbs/v1'
 
 const toc = [
   { id: 'quick-start', label: 'Quick start' },
@@ -62,7 +62,7 @@ export function DocsPage() {
               </li>
               <li>
                 Give the provider your webhook's URL instead of your own endpoint:
-                <Code title="Webhook URL">{`https://server.aegonassett.com/v1/in/<your webhook token>`}</Code>
+                <Code title="Webhook URL">{`https://api.relaya.sbs/v1/in/<your webhook token>`}</Code>
                 Every event is stored, checked and shown in <b className="text-l-text">Events</b> within milliseconds.
               </li>
               <li>

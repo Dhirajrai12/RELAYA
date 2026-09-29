@@ -3,6 +3,10 @@ import { useAuth } from './auth'
 // Same origin in dev (Vite proxy) and in production (IIS serves both).
 const BASE = import.meta.env.VITE_API_BASE ?? '/api/v1'
 
+// The address customers call from their own code (SDKs, curl), without /v1. On the hosted
+// dashboard that's the API's own domain; elsewhere the dashboard's origin serves it under /api.
+export const PUBLIC_API = location.origin === 'https://relaya.sbs' ? 'https://api.relaya.sbs' : `${location.origin}/api`
+
 export class ApiError extends Error {
   status: number
   code: string

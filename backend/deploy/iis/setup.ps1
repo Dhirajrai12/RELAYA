@@ -60,11 +60,13 @@ if (-not (Get-WebConfigurationProperty -PSPath $apphost -Filter system.webServer
   Write-Host '    enabled'
 }
 
-Step 'Allow HTTP_X_REAL_IP server variable'
-$allowed = Get-WebConfiguration -PSPath $apphost -Filter 'system.webServer/rewrite/allowedServerVariables/add' |
-  Where-Object { $_.name -eq 'HTTP_X_REAL_IP' }
-if (-not $allowed) {
-  Add-WebConfigurationProperty -PSPath $apphost -Filter system.webServer/rewrite/allowedServerVariables -Name '.' -Value @{ name = 'HTTP_X_REAL_IP' }
+Step 'Allow HTTP_X_REAL_IP and HTTP_X_FORWARDED_HOST server variables'
+foreach ($var in 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_HOST') {
+  $allowed = Get-WebConfiguration -PSPath $apphost -Filter 'system.webServer/rewrite/allowedServerVariables/add' |
+    Where-Object { $_.name -eq $var }
+  if (-not $allowed) {
+    Add-WebConfigurationProperty -PSPath $apphost -Filter system.webServer/rewrite/allowedServerVariables -Name '.' -Value @{ name = $var }
+  }
 }
 
 # ---- services ------------------------------------------------------------------
@@ -88,21 +90,31 @@ if (Test-Path (Join-Path $WebDist 'index.html')) {
 } else {
   Write-Host "    no dashboard build at $WebDist (run npm run build in web\) - skipped" -ForegroundColor Yellow
 }
-# The dashboard can live on its own domain (DASHBOARD_URL in .env); ingest and the API stay on $HostName.
-$dashHost = $HostName
-$dashLine = Get-Content $envFile | Where-Object { $_ -match '^\s*DASHBOARD_URL\s*=' } | Select-Object -Last 1
-if ($dashLine) {
-  $u = ($dashLine -replace '^\s*DASHBOARD_URL\s*=\s*', '').Trim().Trim('"', "'")
-  try { $dashHost = ([Uri]$u).Host } catch { throw "DASHBOARD_URL in $envFile is not a URL: $u" }
+# The dashboard (DASHBOARD_URL) and the API/webhooks (INGEST_BASE_URL) can each have their own
+# domain; $HostName keeps serving everything, so URLs already given out keep working.
+function EnvHost($name) {
+  $line = Get-Content $envFile | Where-Object { $_ -match "^\s*$name\s*=" } | Select-Object -Last 1
+  if (-not $line) { return $HostName }
+  $u = ($line -replace "^\s*$name\s*=\s*", '').Trim().Trim('"', "'")
+  try { return ([Uri]$u).Host } catch { throw "$name in $envFile is not a URL: $u" }
 }
+$dashHost = EnvHost 'DASHBOARD_URL'
+$apiHost = EnvHost 'INGEST_BASE_URL'
 $config = Get-Content (Join-Path $PSScriptRoot 'web.config') -Raw
+if ($apiHost -eq $HostName) {
+  $config = $config -replace '(?s)\s*<!--API-HOST.*?<!--/API-HOST-->', ''
+} else {
+  $config = $config.Replace('__API_HOST__', $apiHost).Replace('__API_HOST_RE__', [regex]::Escape($apiHost))
+  Write-Host "    API and webhooks at https://$apiHost/v1/..."
+}
 if ($dashHost -eq $HostName) {
   $config = $config -replace '(?s)\s*<!--DASHBOARD-MOVED.*?<!--/DASHBOARD-MOVED-->', ''
   $wss = "wss://$HostName"
 } else {
-  $config = $config.Replace('__DASHBOARD_HOST__', $dashHost).Replace('__HOST_RE__', [regex]::Escape($HostName))
+  $others = @($HostName, $apiHost) | Where-Object { $_ -ne $dashHost } | Select-Object -Unique
+  $config = $config.Replace('__DASHBOARD_HOST__', $dashHost).Replace('__HOST_RE__', '(' + (($others | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')')
   $wss = "wss://$HostName wss://$dashHost"
-  Write-Host "    dashboard at https://$dashHost (pages on $HostName redirect there)"
+  Write-Host "    dashboard at https://$dashHost (pages on $($others -join ', ') redirect there)"
 }
 $config.Replace('wss://__HOST__', $wss) | Set-Content (Join-Path $site 'web.config') -Encoding UTF8 -NoNewline
 
@@ -160,10 +172,13 @@ if ($CertThumbprint -and -not (Get-WebBinding -Name $SiteName -Protocol https -H
   New-WebBinding -Name $SiteName -Protocol https -Port 443 -HostHeader $HostName -SslFlags 1
   (Get-WebBinding -Name $SiteName -Protocol https -HostHeader $HostName).AddSslCertificate($CertThumbprint, $CertStore)
 }
-if ($dashHost -ne $HostName) {
-  # Plain HTTP for the dashboard domain (and www), so its certificate can be issued and renewed
-  # (win-acme adds the https bindings).
-  foreach ($h in $dashHost, "www.$dashHost") {
+# Plain HTTP for the extra domains (and the dashboard's www), so their certificate can be
+# issued and renewed (win-acme adds the https bindings).
+$extra = @()
+if ($dashHost -ne $HostName) { $extra += $dashHost, "www.$dashHost" }
+if ($apiHost -ne $HostName -and $apiHost -ne $dashHost) { $extra += $apiHost }
+if ($extra) {
+  foreach ($h in $extra) {
     if (-not (Get-WebBinding -Name $SiteName -Protocol http -Port 80 -HostHeader $h)) {
       New-WebBinding -Name $SiteName -Protocol http -Port 80 -HostHeader $h
       Write-Host "    added http binding for $h"
@@ -192,6 +207,7 @@ $checks = @(
   @{ Name = 'api via IIS';    Url = 'http://127.0.0.1/api/readyz';  Host = $HostName }
 )
 if ($dashHost -ne $HostName) { $checks += @{ Name = 'dashboard API'; Url = 'http://127.0.0.1/api/readyz'; Host = $dashHost } }
+if ($apiHost -ne $HostName) { $checks += @{ Name = 'API domain'; Url = 'http://127.0.0.1/readyz'; Host = $apiHost } }
 foreach ($c in $checks) {
   # curl.exe ships with Server 2019+; Invoke-WebRequest in PS 5.1 cannot set the Host header.
   $curlArgs = @('-s', '-o', 'NUL', '-w', '%{http_code}', '--max-time', '5', $c.Url)
@@ -200,4 +216,5 @@ foreach ($c in $checks) {
   $color = if ($code -eq '200') { 'Green' } else { 'Red' }
   Write-Host ("    {0,-15} {1}" -f $c.Name, $code) -ForegroundColor $color
 }
-Write-Host "Done. Webhook URLs will look like https://$HostName/v1/in/<token>; API at https://$HostName/api/v1/...; dashboard at https://$dashHost/"
+$apiURL = if ($apiHost -eq $HostName) { "https://$HostName/api/v1/..." } else { "https://$apiHost/v1/..." }
+Write-Host "Done. Webhook URLs will look like https://$apiHost/v1/in/<token>; API at $apiURL; dashboard at https://$dashHost/"
