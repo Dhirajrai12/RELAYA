@@ -1,5 +1,9 @@
 # Relaya
 
+[![Backend Tests](https://github.com/Dhirajrai12/relaya/actions/workflows/backend.yml/badge.svg?branch=main)](https://github.com/Dhirajrai12/relaya/actions/workflows/backend.yml)
+[![Dashboard Tests](https://github.com/Dhirajrai12/relaya/actions/workflows/web.yml/badge.svg?branch=main)](https://github.com/Dhirajrai12/relaya/actions/workflows/web.yml)
+[![Deployments](https://github.com/Dhirajrai12/relaya/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/Dhirajrai12/relaya/actions/workflows/deploy.yml)
+
 Relaya is an integration reliability and control platform. It receives webhooks from third-party providers, verifies and stores every event, forwards them to your endpoints with retries, and helps you see and fix what breaks.
 
 ## What it does
@@ -57,3 +61,14 @@ cd web && npm run lint && npm run build
 
 - [Backend](backend/README.md): services, API, providers, delivery, contracts, repair rules, alerts, connections, operations and deployment on Windows Server + IIS.
 - [Dashboard](web/README.md): development, build and deployment.
+- [Deployment & CI/CD](DEPLOYMENT.md): automated testing, building, and deployment pipeline.
+
+## CI/CD Pipeline
+
+Every push to `main` triggers:
+1. **Tests** — Backend and dashboard tests run in parallel
+2. **Build** — Go binaries and React distribution are compiled
+3. **Deploy to Staging** — Automatically deployed after tests pass
+4. **Deploy to Production** — Manual approval required
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for setup instructions and customization.

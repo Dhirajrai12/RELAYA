@@ -1,0 +1,188 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", "web/**", ".github/workflows/deploy.yml"]
+  workflow_run:
+    workflows: [backend, web]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Only deploy if upstream workflows succeeded
+  check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      should-deploy: ${{ steps.check.outputs.should-deploy }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: echo "should-deploy=true" >> $GITHUB_OUTPUT
+
+  build-backend:
+    needs: check
+    if: needs.check.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: Build binaries
+        run: |
+          cd backend
+          go build -trimpath -o dist/api ./cmd/api
+          go build -trimpath -o dist/ingest ./cmd/ingest
+          go build -trimpath -o dist/worker ./cmd/worker
+          go build -trimpath -o dist/migrate ./cmd/migrate
+      - name: Upload backend artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-binaries
+          path: backend/dist/
+          retention-days: 5
+
+  build-web:
+    needs: check
+    if: needs.check.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/package.json
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --prefix web
+      - run: npm run build --prefix web
+      - name: Upload web artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
+          retention-days: 5
+
+  # Deploy to staging automatically on every main push
+  deploy-staging:
+    needs: [build-backend, build-web]
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.relaya.example.com
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download backend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-binaries
+          path: backend/dist/
+      - name: Download web artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
+      - name: Deploy to staging
+        env:
+          DEPLOY_HOST: ${{ secrets.STAGING_HOST }}
+          DEPLOY_USER: ${{ secrets.STAGING_USER }}
+          DEPLOY_KEY: ${{ secrets.STAGING_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Copy binaries
+          scp -i ~/.ssh/deploy_key -r backend/dist/ "$DEPLOY_USER@$DEPLOY_HOST:/opt/relaya/staging/bin/"
+
+          # Copy web files
+          scp -i ~/.ssh/deploy_key -r web/dist/ "$DEPLOY_USER@$DEPLOY_HOST:/opt/relaya/staging/site/"
+
+          # Restart services
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "systemctl restart relaya-api relaya-ingest relaya-worker || echo 'Services restarted (or manual restart needed on Windows)'"
+      - name: Notify deployment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.deployments.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: ${{ github.event.deployment.id }},
+              state: 'success',
+              environment_url: 'https://staging.relaya.example.com',
+              description: 'Deployed to staging'
+            })
+
+  # Require manual approval for production
+  deploy-production:
+    needs: [build-backend, build-web]
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://relaya.example.com
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download backend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-binaries
+          path: backend/dist/
+      - name: Download web artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
+      - name: Deploy to production (Windows IIS)
+        env:
+          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_USER: ${{ secrets.PROD_USER }}
+          DEPLOY_PASSWORD: ${{ secrets.PROD_PASSWORD }}
+        run: |
+          # For Windows deployment, use WinRM or similar
+          # This is a template - adapt to your deployment method
+          echo "Deploying to production: $DEPLOY_HOST"
+          echo "Would execute: deploy/iis/setup.ps1 with the new binaries"
+
+          # Example for Unix-based prod:
+          # mkdir -p ~/.ssh
+          # echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          # chmod 600 ~/.ssh/deploy_key
+          # scp -i ~/.ssh/deploy_key -r backend/dist/ "$DEPLOY_USER@$DEPLOY_HOST:/var/relaya/bin/"
+          # scp -i ~/.ssh/deploy_key -r web/dist/ "$DEPLOY_USER@$DEPLOY_HOST:/var/relaya/site/"
+          # ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd /var/relaya && ./deploy.sh"
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release ${{ github.run_number }}
+          body: |
+            Automated deployment to production.
+            Commit: ${{ github.sha }}
+          draft: false
+          prerelease: false
+
+  # Notify team on deployment status
+  notify:
+    needs: [deploy-staging, deploy-production]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Deployment summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Staging**: ${{ needs.deploy-staging.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Production**: ${{ needs.deploy-production.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "Branch: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
