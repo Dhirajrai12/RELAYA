@@ -85,8 +85,14 @@ try {
   Expand-Archive -Path $zip -DestinationPath $pkg
 
   function Deploy($pkgDir) {
-    & (Join-Path $pkgDir 'deploy\iis\setup.ps1') -HostName $HostName -InstallDir $InstallDir `
-      -DistDir (Join-Path $pkgDir 'dist') -WebDist (Join-Path $pkgDir 'web') -CertThumbprint $CertThumbprint -CertStore $CertStore *>> $log
+    # In its own process: redirected in-process, anything a tool writes to stderr (migrate
+    # logs there) becomes a terminating error and stops setup.ps1 halfway, services down.
+    $ErrorActionPreference = 'Continue'
+    $a = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $pkgDir 'deploy\iis\setup.ps1'),
+      '-HostName', $HostName, '-InstallDir', $InstallDir, '-DistDir', (Join-Path $pkgDir 'dist'), '-WebDist', (Join-Path $pkgDir 'web'), '-CertStore', $CertStore)
+    if ($CertThumbprint) { $a += @('-CertThumbprint', $CertThumbprint) }
+    & powershell.exe @a 2>&1 | ForEach-Object { Log "  $_" }
+    if ($LASTEXITCODE -ne 0) { throw "setup.ps1 exited with $LASTEXITCODE" }
   }
   function Healthy {
     for ($i = 0; $i -lt 20; $i++) {
@@ -118,7 +124,11 @@ try {
     if ($prev -and (Test-Path $prev)) {
       try { Deploy $prev; Log "rolled back to $($current.Substring(0, 7)); healthy: $(Healthy)" } catch { Log "ROLLBACK FAILED: $($_.Exception.Message)" }
     } else {
-      Log 'no previous package to roll back to; fix forward or deploy by hand'
+      Log 'no previous package to roll back to; starting the services as they are'
+      foreach ($s in 'relaya-api', 'relaya-ingest', 'relaya-worker') {
+        try { Start-Service $s -ErrorAction Stop } catch { Log "could not start ${s}: $($_.Exception.Message)" }
+      }
+      Log "healthy after start: $(Healthy). Fix forward or deploy by hand."
     }
     # Don't retry the same broken build every few minutes.
     Set-Content -Path $failed -Value $sha -Encoding ASCII
