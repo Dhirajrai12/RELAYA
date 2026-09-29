@@ -9,6 +9,11 @@
 /monitoring/
 /secrets.txt
 /stripe-whsec.txt
+# auto-deploy state (backend/deploy/iis/autodeploy.ps1)
+/logs/
+/releases/
+/autodeploy.*
+/deployed-sha.txt
 .env
 
 # build output

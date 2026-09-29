@@ -65,6 +65,36 @@ Notes:
 - `.env` is read from next to the executable (or `ENV_FILE`), because services start in `System32` with no shell environment. Real environment variables override it.
 - Rate limiting isn't configured yet. Add IIS Dynamic IP Restrictions before public launch.
 
+### Automatic deploys (CI/CD)
+
+Every push to `main` runs [.github/workflows/deploy.yml](../.github/workflows/deploy.yml): it runs the Go tests (with Postgres) and the dashboard build, builds the Windows binaries and the dashboard, and publishes them as the GitHub release **`production`** (a zip, its SHA-256 and `manifest.json` with the commit).
+
+The server pulls that release, so it doesn't need to accept any incoming connection and GitHub never holds server credentials. Set it up once, from an elevated PowerShell in `backend\deploy\iis\`:
+
+```powershell
+.\install-autodeploy.ps1 -HostName server.example.com -CertThumbprint <thumbprint> -CertStore WebHosting
+```
+
+This registers the scheduled task **Relaya auto-deploy** (runs as SYSTEM every 5 minutes). Each run of [autodeploy.ps1](deploy/iis/autodeploy.ps1):
+
+1. stops unless `C:\relaya\autodeploy.enabled` exists;
+2. skips if the release's commit is already deployed (`deployed-sha.txt`), already failed, or not on `main`;
+3. downloads the zip into `C:\relaya\releases\<sha>` and verifies its SHA-256;
+4. runs the package's `setup.ps1` (stops services, copies binaries and the dashboard, migrates, restarts);
+5. waits for `/api/healthz` and `/healthz`. If either still fails after about a minute, it redeploys the previous package and marks the build as failed.
+
+It keeps the last 5 packages. Everything is logged to `C:\relaya\logs\autodeploy.log`.
+
+| To | Do |
+|---|---|
+| Pause deploys | `Remove-Item C:\relaya\autodeploy.enabled` |
+| Resume | `New-Item C:\relaya\autodeploy.enabled` |
+| Approve each deploy by hand | GitHub → Settings → Environments → `production` → Required reviewers |
+| Redeploy the latest build | Actions → Deploy → Run workflow |
+| Remove | `.\install-autodeploy.ps1 -Uninstall` |
+
+Migrations run forward only: a rollback restores the previous binaries but not the previous schema. Keep migrations backward compatible (add columns; drop them in a later release).
+
 ## Tests
 
 ```sh

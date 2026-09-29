@@ -1,188 +1,123 @@
 name: Deploy
 
+# Every push to main is tested, built for the Windows/IIS server and published as
+# the "production" release. The server pulls it: a scheduled task there
+# (backend/deploy/iis/autodeploy.ps1) checks this release every few minutes,
+# verifies the package's SHA-256, deploys it with setup.ps1, checks /api/healthz and
+# rolls back if it fails. Nothing on the server is opened to the internet, and no
+# GitHub runner ever gets access to it.
+#
+# To approve each deploy by hand: Settings → Environments → production → Required
+# reviewers. Without rules the environment publishes straight away.
+
 on:
   push:
     branches: [main]
-    paths: ["backend/**", "web/**", ".github/workflows/deploy.yml"]
-  workflow_run:
-    workflows: [backend, web]
-    types: [completed]
-    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-production
   cancel-in-progress: false
 
 jobs:
-  # Only deploy if upstream workflows succeeded
-  check:
+  test:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
-    outputs:
-      should-deploy: ${{ steps.check.outputs.should-deploy }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: relaya
+          POSTGRES_PASSWORD: relaya
+          POSTGRES_DB: relaya_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U relaya" --health-interval 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://relaya:relaya@localhost:5432/relaya_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
-      - id: check
-        run: echo "should-deploy=true" >> $GITHUB_OUTPUT
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Backend tests (with the database)
+        working-directory: backend
+        run: |
+          test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+          go vet ./...
+          go test ./...
+      - name: Dashboard type check and build
+        working-directory: web
+        run: npm ci && npx tsc -b && npm run build
 
-  build-backend:
-    needs: check
-    if: needs.check.outputs.should-deploy == 'true'
+  package:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
-      - name: Build binaries
-        run: |
-          cd backend
-          go build -trimpath -o dist/api ./cmd/api
-          go build -trimpath -o dist/ingest ./cmd/ingest
-          go build -trimpath -o dist/worker ./cmd/worker
-          go build -trimpath -o dist/migrate ./cmd/migrate
-      - name: Upload backend artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-binaries
-          path: backend/dist/
-          retention-days: 5
-
-  build-web:
-    needs: check
-    if: needs.check.outputs.should-deploy == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version-file: web/package.json
+          node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: npm ci --prefix web
-      - run: npm run build --prefix web
-      - name: Upload web artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-dist
-          path: web/dist/
-          retention-days: 5
-
-  # Deploy to staging automatically on every main push
-  deploy-staging:
-    needs: [build-backend, build-web]
-    runs-on: ubuntu-latest
-    environment:
-      name: staging
-      url: https://staging.relaya.example.com
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download backend artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-binaries
-          path: backend/dist/
-      - name: Download web artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: web-dist
-          path: web/dist/
-      - name: Deploy to staging
-        env:
-          DEPLOY_HOST: ${{ secrets.STAGING_HOST }}
-          DEPLOY_USER: ${{ secrets.STAGING_USER }}
-          DEPLOY_KEY: ${{ secrets.STAGING_KEY }}
+      - name: Build for the Windows server
         run: |
-          mkdir -p ~/.ssh
-          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-
-          # Copy binaries
-          scp -i ~/.ssh/deploy_key -r backend/dist/ "$DEPLOY_USER@$DEPLOY_HOST:/opt/relaya/staging/bin/"
-
-          # Copy web files
-          scp -i ~/.ssh/deploy_key -r web/dist/ "$DEPLOY_USER@$DEPLOY_HOST:/opt/relaya/staging/site/"
-
-          # Restart services
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
-            "systemctl restart relaya-api relaya-ingest relaya-worker || echo 'Services restarted (or manual restart needed on Windows)'"
-      - name: Notify deployment
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.deployments.createDeploymentStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              deployment_id: ${{ github.event.deployment.id }},
-              state: 'success',
-              environment_url: 'https://staging.relaya.example.com',
-              description: 'Deployed to staging'
-            })
-
-  # Require manual approval for production
-  deploy-production:
-    needs: [build-backend, build-web]
-    runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://relaya.example.com
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download backend artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-binaries
-          path: backend/dist/
-      - name: Download web artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: web-dist
-          path: web/dist/
-      - name: Deploy to production (Windows IIS)
-        env:
-          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
-          DEPLOY_USER: ${{ secrets.PROD_USER }}
-          DEPLOY_PASSWORD: ${{ secrets.PROD_PASSWORD }}
+          set -eu
+          mkdir -p pkg/dist pkg/web pkg/deploy
+          (cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -o ../pkg/dist/ ./cmd/...)
+          (cd web && npm ci && npm run build)
+          cp -r web/dist/. pkg/web/
+          cp -r backend/deploy/iis pkg/deploy/iis
+          printf '{"sha":"%s","built_at":"%s","run":"%s/%s/actions/runs/%s"}\n' \
+            "$GITHUB_SHA" "$(date -u +%FT%TZ)" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > pkg/manifest.json
+          ls pkg/dist
+      - name: Zip and checksum
         run: |
-          # For Windows deployment, use WinRM or similar
-          # This is a template - adapt to your deployment method
-          echo "Deploying to production: $DEPLOY_HOST"
-          echo "Would execute: deploy/iis/setup.ps1 with the new binaries"
-
-          # Example for Unix-based prod:
-          # mkdir -p ~/.ssh
-          # echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
-          # chmod 600 ~/.ssh/deploy_key
-          # scp -i ~/.ssh/deploy_key -r backend/dist/ "$DEPLOY_USER@$DEPLOY_HOST:/var/relaya/bin/"
-          # scp -i ~/.ssh/deploy_key -r web/dist/ "$DEPLOY_USER@$DEPLOY_HOST:/var/relaya/site/"
-          # ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd /var/relaya && ./deploy.sh"
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          set -eu
+          short=${GITHUB_SHA::7}
+          (cd pkg && zip -qr "../relaya-$short.zip" .)
+          sha256sum "relaya-$short.zip" | cut -d' ' -f1 > "relaya-$short.zip.sha256"
+          cp pkg/manifest.json manifest.json
+          cat "relaya-$short.zip.sha256"
+      - uses: actions/upload-artifact@v4
         with:
-          tag_name: v${{ github.run_number }}
-          release_name: Release ${{ github.run_number }}
-          body: |
-            Automated deployment to production.
-            Commit: ${{ github.sha }}
-          draft: false
-          prerelease: false
+          name: package
+          path: |
+            relaya-*.zip
+            relaya-*.zip.sha256
+            manifest.json
+          retention-days: 7
 
-  # Notify team on deployment status
-  notify:
-    needs: [deploy-staging, deploy-production]
+  publish:
+    needs: package
     runs-on: ubuntu-latest
-    if: always()
+    environment: production
+    permissions:
+      contents: write # replace the "production" release
     steps:
-      - name: Deployment summary
+      - uses: actions/download-artifact@v4
+        with:
+          name: package
+      - name: Publish the production release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Staging**: ${{ needs.deploy-staging.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Production**: ${{ needs.deploy-production.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "Branch: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+          set -eu
+          short=${GITHUB_SHA::7}
+          gh release delete production --cleanup-tag --yes || true
+          gh release create production relaya-*.zip relaya-*.zip.sha256 manifest.json \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Production build $short" \
+            --notes "Tested build of $GITHUB_SHA for the Windows/IIS server. The server's auto-deploy task installs it within a few minutes. Built by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+          echo "Published production build $short" >> "$GITHUB_STEP_SUMMARY"
