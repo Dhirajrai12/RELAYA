@@ -10,12 +10,12 @@ import (
 func TestStreamOriginsIncludeDashboard(t *testing.T) {
 	cfg := config.Config{
 		AllowedOrigins: make([]string, 1, 4),
-		IngestBaseURL:  "https://server.aegonassett.com",
+		IngestBaseURL:  "https://api.relaya.sbs",
 		DashboardURL:   "https://relaya.sbs",
 	}
 	cfg.AllowedOrigins[0] = "http://localhost:5173"
 	got := streamOrigins(cfg)
-	want := []string{"localhost:5173", "server.aegonassett.com", "relaya.sbs"}
+	want := []string{"localhost:5173", "api.relaya.sbs", "relaya.sbs"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}

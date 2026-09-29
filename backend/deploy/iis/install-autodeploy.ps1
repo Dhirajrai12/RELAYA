@@ -13,7 +13,7 @@
   Log:             C:\relaya\logs\autodeploy.log
 
 .EXAMPLE
-  .\install-autodeploy.ps1 -HostName server.aegonassett.com -CertThumbprint <thumbprint> -CertStore WebHosting
+  .\install-autodeploy.ps1 -HostName api.relaya.sbs
 #>
 [CmdletBinding()]
 param(
@@ -38,7 +38,7 @@ if ($Uninstall) {
   Write-Host "Removed the '$task' task. Deployed files are left as they are."
   exit 0
 }
-if (-not $HostName) { throw '-HostName is required (e.g. server.aegonassett.com).' }
+if (-not $HostName) { throw '-HostName is required (e.g. api.relaya.sbs).' }
 
 $bin = Join-Path $InstallDir 'bin'
 New-Item -ItemType Directory -Force $bin | Out-Null

@@ -13,7 +13,7 @@ Grafana database are kept, and the Grafana admin password is only set once
 param(
   [Parameter(Mandatory)] [string] $Downloads,
   [string] $InstallDir = 'C:\relaya',
-  # Set when IIS publishes Grafana (web.config "grafana" rule), e.g. https://server.aegonassett.com/grafana/
+  # Set when IIS publishes Grafana (web.config "grafana" rule), e.g. https://relaya.sbs/grafana/
   [string] $PublicUrl = ''
 )
 
