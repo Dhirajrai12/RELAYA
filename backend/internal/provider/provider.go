@@ -67,6 +67,14 @@ func init() {
 	register(payu{})
 	register(phonepe{})
 	register(jiraProvider{})
+	register(sendgrid{})
+	register(slack{tolerance: 5 * time.Minute})
+	register(twilio{})
+	register(hubspot{})
+	register(segment{})
+	register(brex{})
+	register(square{})
+	register(notion{})
 }
 
 // Get returns the named provider, or false if it is unknown.
@@ -526,7 +534,334 @@ func (jiraProvider) DedupKey(r Request) string {
 
 func (jiraProvider) EventType(r Request) string { return jsonString(r.Body, "webhookEvent") }
 
+// ---- SendGrid: X-Twilio-Email-Event-Webhook-Signature = base64 HMAC-SHA256 ----
+//
+// SendGrid (Twilio Email) signs with base64 HMAC-SHA256 over timestamp + body.
+
+type sendgrid struct{}
+
+func (sendgrid) Name() string { return "sendgrid" }
+
+func (sendgrid) Verify(r Request, c Config) SignatureResult {
+	if len(c.Secret) == 0 {
+		return SigNotConfigured
+	}
+	got := r.Header.Get("X-Twilio-Email-Event-Webhook-Signature")
+	if got == "" {
+		return SigMissing
+	}
+	ts := r.Header.Get("X-Twilio-Email-Event-Webhook-Timestamp")
+	if ts == "" {
+		return SigInvalid
+	}
+	raw, err := base64.StdEncoding.DecodeString(got)
+	if err != nil || !hmac.Equal(raw, hmacSHA256(c.Secret, append([]byte(ts), r.Body...))) {
+		return SigInvalid
+	}
+	return SigValid
+}
+
+func (sendgrid) DedupKey(r Request) string {
+	var m struct {
+		EmailTo string `json:"email_to"`
+		TS      int64  `json:"timestamp"`
+		Event   string `json:"event"`
+	}
+	if json.Unmarshal(r.Body, &m) != nil {
+		return ""
+	}
+	if m.EmailTo == "" || m.TS == 0 {
+		return ""
+	}
+	return m.EmailTo + ":" + strconv.FormatInt(m.TS, 10) + ":" + m.Event
+}
+
+func (sendgrid) EventType(r Request) string { return jsonString(r.Body, "event") }
+
+// ---- Slack: X-Slack-Request-Timestamp + X-Slack-Signature = v0=<hex HMAC> -----
+//
+// Slack uses request timestamp and base version for replay protection.
+
+type slack struct{ tolerance time.Duration }
+
+func (slack) Name() string { return "slack" }
+
+func (s slack) Verify(r Request, c Config) SignatureResult {
+	if len(c.Secret) == 0 {
+		return SigNotConfigured
+	}
+	ts := r.Header.Get("X-Slack-Request-Timestamp")
+	sig := r.Header.Get("X-Slack-Signature")
+	if ts == "" || sig == "" {
+		return SigMissing
+	}
+	unix, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		return SigInvalid
+	}
+	if age := r.Now.Sub(time.Unix(unix, 0)); age > s.tolerance || age < -s.tolerance {
+		return SigInvalid
+	}
+	baseString := append([]byte("v0:"+ts+":"), r.Body...)
+	want := hmacSHA256(c.Secret, baseString)
+	gotHex, ok := strings.CutPrefix(sig, "v0=")
+	if !ok {
+		return SigInvalid
+	}
+	return compareHex(gotHex, want)
+}
+
+func (slack) DedupKey(r Request) string {
+	var m struct {
+		Envelope string `json:"envelope_id"`
+	}
+	if json.Unmarshal(r.Body, &m) != nil {
+		return ""
+	}
+	return m.Envelope
+}
+
+func (slack) EventType(r Request) string {
+	var m struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(r.Body, &m) != nil {
+		return ""
+	}
+	return m.Type
+}
+
+// ---- Twilio: X-Twilio-Signature = base64 HMAC-SHA1 of URL + params --------
+
+type twilio struct{}
+
+func (twilio) Name() string { return "twilio" }
+
+func (twilio) Verify(r Request, c Config) SignatureResult {
+	if len(c.Secret) == 0 {
+		return SigNotConfigured
+	}
+	got := r.Header.Get("X-Twilio-Signature")
+	if got == "" {
+		return SigMissing
+	}
+	// Parse form data and reconstruct signed string
+	bodyFields := bodyFields(r.Body)
+	url := r.Header.Get("X-Twilio-Webhook-Url")
+	if url == "" {
+		url = "http://localhost"
+	}
+	baseString := url
+	for _, k := range sortedKeys(bodyFields) {
+		baseString += k + bodyFields[k]
+	}
+	m := hmac.New(sha512.New, c.Secret)
+	m.Write([]byte(baseString))
+	want := base64.StdEncoding.EncodeToString(m.Sum(nil))
+	gotRaw, err := base64.StdEncoding.DecodeString(got)
+	if err != nil || !hmac.Equal(gotRaw, []byte(want)) {
+		return SigInvalid
+	}
+	return SigValid
+}
+
+func (twilio) DedupKey(r Request) string {
+	f := bodyFields(r.Body)
+	return f["MessageSid"]
+}
+
+func (twilio) EventType(r Request) string {
+	f := bodyFields(r.Body)
+	return f["MessageStatus"]
+}
+
+// ---- HubSpot: X-HubSpot-Signature = hex HMAC-SHA256 of body ----------------
+
+type hubspot struct{}
+
+func (hubspot) Name() string { return "hubspot" }
+
+func (hubspot) Verify(r Request, c Config) SignatureResult {
+	if len(c.Secret) == 0 {
+		return SigNotConfigured
+	}
+	got := r.Header.Get("X-HubSpot-Signature")
+	if got == "" {
+		return SigMissing
+	}
+	return compareHex(got, hmacSHA256(c.Secret, r.Body))
+}
+
+func (hubspot) DedupKey(r Request) string {
+	var m struct {
+		Attempts []struct {
+			ID string `json:"id"`
+		} `json:"attempts"`
+	}
+	if json.Unmarshal(r.Body, &m) != nil || len(m.Attempts) == 0 {
+		return ""
+	}
+	return m.Attempts[0].ID
+}
+
+func (hubspot) EventType(r Request) string {
+	var m struct {
+		Subscription struct {
+			Type string `json:"subscriptionType"`
+		} `json:"subscription"`
+	}
+	if json.Unmarshal(r.Body, &m) != nil {
+		return ""
+	}
+	return m.Subscription.Type
+}
+
+// ---- Segment: Authorization = base64 HMAC-SHA1 of body --------------------
+
+type segment struct{}
+
+func (segment) Name() string { return "segment" }
+
+func (segment) Verify(r Request, c Config) SignatureResult {
+	if len(c.Secret) == 0 {
+		return SigNotConfigured
+	}
+	got := r.Header.Get("Authorization")
+	if got == "" {
+		return SigMissing
+	}
+	gotRaw, err := base64.StdEncoding.DecodeString(got)
+	if err != nil {
+		return SigInvalid
+	}
+	m := hmac.New(sha512.New, c.Secret)
+	m.Write(r.Body)
+	if !hmac.Equal(gotRaw, m.Sum(nil)[:20]) {
+		return SigInvalid
+	}
+	return SigValid
+}
+
+func (segment) DedupKey(r Request) string {
+	var m struct {
+		MessageID string `json:"messageId"`
+	}
+	if json.Unmarshal(r.Body, &m) != nil {
+		return ""
+	}
+	return m.MessageID
+}
+
+func (segment) EventType(r Request) string {
+	return r.Header.Get("Content-Type")
+}
+
+// ---- Brex: X-Brex-Signature = hex HMAC-SHA256(body) -----------------------
+
+type brex struct{}
+
+func (brex) Name() string { return "brex" }
+
+func (brex) Verify(r Request, c Config) SignatureResult {
+	if len(c.Secret) == 0 {
+		return SigNotConfigured
+	}
+	got := r.Header.Get("X-Brex-Signature")
+	if got == "" {
+		return SigMissing
+	}
+	return compareHex(got, hmacSHA256(c.Secret, r.Body))
+}
+
+func (brex) DedupKey(r Request) string { return jsonString(r.Body, "id") }
+
+func (brex) EventType(r Request) string { return jsonString(r.Body, "type") }
+
+// ---- Square: X-Square-Hmac-SHA256 = base64 HMAC-SHA256(body) ---------------
+
+type square struct{}
+
+func (square) Name() string { return "square" }
+
+func (square) Verify(r Request, c Config) SignatureResult {
+	if len(c.Secret) == 0 {
+		return SigNotConfigured
+	}
+	got := r.Header.Get("X-Square-Hmac-SHA256")
+	if got == "" {
+		return SigMissing
+	}
+	gotRaw, err := base64.StdEncoding.DecodeString(got)
+	if err != nil || !hmac.Equal(gotRaw, hmacSHA256(c.Secret, r.Body)) {
+		return SigInvalid
+	}
+	return SigValid
+}
+
+func (square) DedupKey(r Request) string {
+	var m struct {
+		Data struct {
+			Object struct {
+				ID string `json:"id"`
+			} `json:"object"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(r.Body, &m) != nil {
+		return ""
+	}
+	return m.Data.Object.ID
+}
+
+func (square) EventType(r Request) string { return jsonString(r.Body, "type") }
+
+// ---- Notion: X-Notion-Signature = hex HMAC-SHA256("Notion:" + body) -------
+
+type notion struct{}
+
+func (notion) Name() string { return "notion" }
+
+func (notion) Verify(r Request, c Config) SignatureResult {
+	if len(c.Secret) == 0 {
+		return SigNotConfigured
+	}
+	got := r.Header.Get("X-Notion-Signature")
+	if got == "" {
+		return SigMissing
+	}
+	payload := append([]byte("Notion:"), r.Body...)
+	return compareHex(got, hmacSHA256(c.Secret, payload))
+}
+
+func (notion) DedupKey(r Request) string {
+	var m struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(r.Body, &m) != nil {
+		return ""
+	}
+	return m.ID
+}
+
+func (notion) EventType(r Request) string {
+	var m struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(r.Body, &m) != nil {
+		return ""
+	}
+	return m.Type
+}
+
 // ---- helpers ------------------------------------------------------------------
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 // bodyFields reads a flat form-encoded or JSON object body into strings.
 func bodyFields(body []byte) map[string]string {
