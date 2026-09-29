@@ -19,7 +19,7 @@
 param(
   [string] $HostName,
   [string] $InstallDir = 'C:\relaya',
-  [string] $Repo = 'Dhirajrai12/RELAYA',
+  [string] $Repo = 'relayaa/RELAYA',
   [string] $CertThumbprint = '',
   [string] $CertStore = 'My',
   [int] $EveryMinutes = 5,

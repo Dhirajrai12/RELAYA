@@ -1,4 +1,4 @@
 [submodule "sdk"]
 	path = sdk
-	url = https://github.com/Dhirajrai12/relaya-sdks.git
+	url = https://github.com/relayaa/relaya-sdks.git
 	branch = main

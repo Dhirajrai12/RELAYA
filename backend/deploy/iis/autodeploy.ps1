@@ -15,7 +15,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)] [string] $HostName,
-  [string] $Repo = 'Dhirajrai12/RELAYA',
+  [string] $Repo = 'relayaa/RELAYA',
   [string] $InstallDir = 'C:\relaya',
   [string] $CertThumbprint = '',
   [string] $CertStore = 'My',

@@ -1,8 +1,8 @@
 # Relaya
 
-[![Backend Tests](https://github.com/Dhirajrai12/relaya/actions/workflows/backend.yml/badge.svg?branch=main)](https://github.com/Dhirajrai12/relaya/actions/workflows/backend.yml)
-[![Dashboard Tests](https://github.com/Dhirajrai12/relaya/actions/workflows/web.yml/badge.svg?branch=main)](https://github.com/Dhirajrai12/relaya/actions/workflows/web.yml)
-[![Deployments](https://github.com/Dhirajrai12/relaya/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/Dhirajrai12/relaya/actions/workflows/deploy.yml)
+[![Backend Tests](https://github.com/relayaa/relaya/actions/workflows/backend.yml/badge.svg?branch=main)](https://github.com/relayaa/relaya/actions/workflows/backend.yml)
+[![Dashboard Tests](https://github.com/relayaa/relaya/actions/workflows/web.yml/badge.svg?branch=main)](https://github.com/relayaa/relaya/actions/workflows/web.yml)
+[![Deployments](https://github.com/relayaa/relaya/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/relayaa/relaya/actions/workflows/deploy.yml)
 
 Relaya is an integration reliability and control platform. It receives webhooks from third-party providers, verifies and stores every event, forwards them to your endpoints with retries, and helps you see and fix what breaks.
 
@@ -23,7 +23,7 @@ Relaya is an integration reliability and control platform. It receives webhooks 
 |---|---|
 | [`backend/`](backend/README.md) | Go services: `ingest`, `api`, `worker` and `migrate`, backed by PostgreSQL |
 | [`web/`](web/README.md) | Dashboard: React, TypeScript, Vite and Tailwind CSS |
-| `sdk/` | Client SDKs (git submodule: [relaya-sdks](https://github.com/Dhirajrai12/relaya-sdks)) |
+| `sdk/` | Client SDKs (git submodule: [relaya-sdks](https://github.com/relayaa/relaya-sdks)) |
 | `.github/workflows/` | CI for the backend |
 
 ## Getting started
@@ -31,7 +31,7 @@ Relaya is an integration reliability and control platform. It receives webhooks 
 Clone with the SDK submodule:
 
 ```sh
-git clone --recurse-submodules https://github.com/Dhirajrai12/relaya.git
+git clone --recurse-submodules https://github.com/relayaa/relaya.git
 ```
 
 Run the backend (Docker, dev only):

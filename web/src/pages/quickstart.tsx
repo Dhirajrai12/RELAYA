@@ -10,7 +10,7 @@ type Lang = 'node' | 'python' | 'php'
 const LANGS: { key: Lang; label: string; install: string }[] = [
   { key: 'node', label: 'Node.js', install: 'npm install relaya-node' },
   { key: 'python', label: 'Python', install: 'pip install relaya' },
-  { key: 'php', label: 'PHP / Laravel', install: 'composer require dhirajrai12/relaya-php' },
+  { key: 'php', label: 'PHP / Laravel', install: 'composer require relayaa/relaya-php' },
 ]
 
 function savedLang(): Lang {

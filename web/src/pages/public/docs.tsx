@@ -114,7 +114,7 @@ printf '%s.%s' "$t" "$body" | openssl dgst -sha256 -hmac "$RELAYA_SIGNING_SECRET
           </Section>
 
           <Section id="sdks" title="SDKs">
-            <p>Each SDK verifies deliveries and wraps the REST API. Source and full READMEs: <a className="text-l-accent underline-offset-4 hover:underline" href="https://github.com/Dhirajrai12/relaya-sdks" target="_blank" rel="noreferrer">github.com/Dhirajrai12/relaya-sdks</a>.</p>
+            <p>Each SDK verifies deliveries and wraps the REST API. Source and full READMEs: <a className="text-l-accent underline-offset-4 hover:underline" href="https://github.com/relayaa/relaya-sdks" target="_blank" rel="noreferrer">github.com/relayaa/relaya-sdks</a>.</p>
             <SdkTabs />
             <p>
               Every SDK (Node.js, Python, PHP, Go, Java) also covers{' '}
@@ -150,10 +150,10 @@ relaya trigger payment.captured     # in another terminal: a signed test event`}
             </p>
             <p>
               Download it for Windows, macOS or Linux from the{' '}
-              <a className="text-l-accent underline-offset-4 hover:underline" href="https://github.com/Dhirajrai12/relaya-sdks/releases/latest" target="_blank" rel="noreferrer">
+              <a className="text-l-accent underline-offset-4 hover:underline" href="https://github.com/relayaa/relaya-sdks/releases/latest" target="_blank" rel="noreferrer">
                 latest release
               </a>
-              , or with Go: <C>go install github.com/Dhirajrai12/relaya-sdks/cli/cmd/relaya@latest</C>.
+              , or with Go: <C>go install github.com/relayaa/relaya-sdks/cli/cmd/relaya@latest</C>.
             </p>
           </Section>
 
@@ -383,7 +383,7 @@ def relaya_webhook():
   {
     id: 'php',
     label: 'PHP / Laravel',
-    install: 'composer require dhirajrai12/relaya-php',
+    install: 'composer require relayaa/relaya-php',
     code: `// config/services.php
 'relaya' => ['signing_secret' => env('RELAYA_SIGNING_SECRET')],
 
@@ -397,8 +397,8 @@ Route::post('/webhooks/relaya', function (Request $request) {
   {
     id: 'go',
     label: 'Go',
-    install: 'go get github.com/Dhirajrai12/relaya-sdks/go',
-    code: `import relaya "github.com/Dhirajrai12/relaya-sdks/go"
+    install: 'go get github.com/relayaa/relaya-sdks/go',
+    code: `import relaya "github.com/relayaa/relaya-sdks/go"
 
 secret := relaya.Secret(os.Getenv("RELAYA_SIGNING_SECRET"))
 http.Handle("/webhooks/relaya", relaya.Middleware(secret, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -411,7 +411,7 @@ http.Handle("/webhooks/relaya", relaya.Middleware(secret, http.HandlerFunc(func(
   {
     id: 'java',
     label: 'Java',
-    install: 'io.github.dhirajrai12:relaya-java (Maven)',
+    install: 'io.github.relayaa:relaya-java (Maven)',
     code: `@PostMapping("/webhooks/relaya")
 ResponseEntity<?> receive(@RequestBody byte[] body, @RequestHeader HttpHeaders headers) {
     Delivery delivery;
