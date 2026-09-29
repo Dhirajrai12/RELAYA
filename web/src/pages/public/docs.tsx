@@ -57,7 +57,7 @@ export function DocsPage() {
               <li>
                 <Link to="/signup" className="text-l-accent underline-offset-4 hover:underline">Sign up</Link> and create a{' '}
                 <b className="text-l-text">project</b>, then a <b className="text-l-text">webhook</b>. Pick the provider (Razorpay, Cashfree, PayU,
-                PhonePe, Stripe, Shopify, GitHub, Jira, Standard Webhooks / Svix, or generic HMAC) and paste its signing secret, so Relaya can verify
+                PhonePe, Stripe, Shopify, GitHub, Jira, Slack, Twilio, HubSpot, Square, Segment, SendGrid, Notion, Standard Webhooks / Svix (which also covers senders built on Svix, such as Brex, Clerk and Resend), or generic HMAC) and paste its signing secret, so Relaya can verify
                 what arrives. The webhook's page shows where to set this up at the provider.
               </li>
               <li>

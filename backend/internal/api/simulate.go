@@ -31,8 +31,8 @@ const maxSimulatedBody = 256 << 10
 var simEventTypeRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,99}$`)
 
 type simWebhook struct {
-	id, orgID, projectID, provider, kind, signatureHeader string
-	secretEnc                                             []byte
+	id, orgID, projectID, provider, kind, signatureHeader, ingestToken string
+	secretEnc                                                          []byte
 }
 
 func (s *Server) simWebhook(r *http.Request, min auth.Role) (auth.Principal, simWebhook, error) {
@@ -46,8 +46,8 @@ func (s *Server) simWebhook(r *http.Request, min auth.Role) (auth.Principal, sim
 	}
 	wh := simWebhook{id: id, orgID: orgID}
 	err = s.Pool.QueryRow(r.Context(), `
-		SELECT project_id, provider, kind, signature_header, signing_secret_enc FROM webhooks WHERE id = $1 AND org_id = $2`, id, orgID).
-		Scan(&wh.projectID, &wh.provider, &wh.kind, &wh.signatureHeader, &wh.secretEnc)
+		SELECT project_id, provider, kind, signature_header, signing_secret_enc, ingest_token FROM webhooks WHERE id = $1 AND org_id = $2`, id, orgID).
+		Scan(&wh.projectID, &wh.provider, &wh.kind, &wh.signatureHeader, &wh.secretEnc, &wh.ingestToken)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, wh, httpx.ErrNotFound
 	}
@@ -121,7 +121,9 @@ func (s *Server) simulateEvent(w http.ResponseWriter, r *http.Request) error {
 	now := time.Now().UTC()
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
-	out, err := provider.Sign(name, body, cfg, now, in.EventType, "sim_"+hex.EncodeToString(b))
+	// Providers that sign the URL (Twilio, HubSpot, Square) sign the webhook's own ingest URL.
+	ingestURL := s.IngestBaseURL + "/v1/in/" + wh.ingestToken
+	out, err := provider.Sign(name, body, cfg, now, in.EventType, "sim_"+hex.EncodeToString(b), ingestURL)
 	if errors.Is(err, provider.ErrCannotSign) {
 		return httpx.BadRequest("%v: send a test from the provider instead", err)
 	}
@@ -132,7 +134,7 @@ func (s *Server) simulateEvent(w http.ResponseWriter, r *http.Request) error {
 	out.Header.Set("Relaya-Simulated", "true")
 
 	// The same checks a real delivery gets.
-	preq := provider.Request{Header: out.Header, Body: out.Body, Now: now}
+	preq := provider.Request{Header: out.Header, Body: out.Body, Now: now, Method: http.MethodPost, URLs: []string{ingestURL}}
 	sig := prov.Verify(preq, cfg)
 	accepted := sig == provider.SigValid || sig == provider.SigNotConfigured
 	status := "received"

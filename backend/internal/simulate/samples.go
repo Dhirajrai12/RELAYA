@@ -164,6 +164,73 @@ var templates = map[string][]template{
 				"amount": 49900, "state": "COMPLETED", "timestamp": now.UnixMilli()}}
 		}},
 	},
+	"slack": {
+		{"message", "A message was posted in a channel", func(now time.Time) any {
+			return slackEvent(now, map[string]any{"type": "message", "channel": "C0" + digits(9), "user": "U0" + digits(9), "text": "Checkout is failing for UPI payments",
+				"ts": fmt.Sprintf("%d.%06s", now.Unix(), digits(6)), "channel_type": "channel"})
+		}},
+		{"app_mention", "Someone mentioned your app", func(now time.Time) any {
+			return slackEvent(now, map[string]any{"type": "app_mention", "channel": "C0" + digits(9), "user": "U0" + digits(9), "text": "<@U0APP> create a ticket for this",
+				"ts": fmt.Sprintf("%d.%06s", now.Unix(), digits(6))})
+		}},
+		{"reaction_added", "A reaction was added", func(now time.Time) any {
+			return slackEvent(now, map[string]any{"type": "reaction_added", "user": "U0" + digits(9), "reaction": "white_check_mark",
+				"item": map[string]string{"type": "message", "channel": "C0" + digits(9), "ts": fmt.Sprintf("%d.%06s", now.Unix(), digits(6))}})
+		}},
+	},
+	"twilio": {
+		{"message.delivered", "An SMS was delivered", func(now time.Time) any { return twilioSMS("delivered") }},
+		{"message.failed", "An SMS failed", func(now time.Time) any {
+			f := twilioSMS("failed")
+			f.Set("ErrorCode", "30006")
+			return f
+		}},
+		{"message.received", "An SMS came in", func(now time.Time) any {
+			f := twilioSMS("received")
+			f.Del("MessageStatus")
+			f.Set("SmsStatus", "received")
+			f.Set("Body", "STOP")
+			return f
+		}},
+	},
+	"hubspot": {
+		{"contact.creation", "A contact was created", func(now time.Time) any { return hubspotBatch(now, "contact.creation", "") }},
+		{"deal.propertyChange", "A deal's stage changed", func(now time.Time) any { return hubspotBatch(now, "deal.propertyChange", "dealstage") }},
+		{"company.deletion", "A company was deleted", func(now time.Time) any { return hubspotBatch(now, "company.deletion", "") }},
+	},
+	"square": {
+		{"payment.updated", "A payment was completed", func(now time.Time) any {
+			return squareEvent(now, "payment.updated", "payment", map[string]any{"id": id("", 22), "status": "COMPLETED",
+				"amount_money": map[string]any{"amount": 4999, "currency": "USD"}, "order_id": id("", 22), "location_id": id("L", 12)})
+		}},
+		{"order.created", "An order was created", func(now time.Time) any {
+			return squareEvent(now, "order.created", "order_created", map[string]any{"order_id": id("", 22), "state": "OPEN", "location_id": id("L", 12), "version": 1})
+		}},
+		{"refund.updated", "A refund was completed", func(now time.Time) any {
+			return squareEvent(now, "refund.updated", "refund", map[string]any{"id": id("", 22), "status": "COMPLETED",
+				"amount_money": map[string]any{"amount": 4999, "currency": "USD"}, "payment_id": id("", 22)})
+		}},
+	},
+	"segment": {
+		{"Order Completed", "A track call: an order was completed", func(now time.Time) any {
+			return map[string]any{"type": "track", "event": "Order Completed", "userId": "user_" + digits(6), "messageId": "ajs-next-" + id("", 32),
+				"timestamp": now.Format(time.RFC3339Nano), "properties": map[string]any{"order_id": "ord_" + digits(6), "revenue": 1499, "currency": "INR"}}
+		}},
+		{"identify", "A user was identified", func(now time.Time) any {
+			return map[string]any{"type": "identify", "userId": "user_" + digits(6), "messageId": "ajs-next-" + id("", 32),
+				"timestamp": now.Format(time.RFC3339Nano), "traits": map[string]string{"email": "asha@example.com", "name": "Asha Rao"}}
+		}},
+	},
+	"sendgrid": {
+		{"delivered", "Emails were delivered", func(now time.Time) any { return sendgridBatch(now, "delivered") }},
+		{"bounce", "Emails bounced", func(now time.Time) any { return sendgridBatch(now, "bounce") }},
+		{"open", "Emails were opened", func(now time.Time) any { return sendgridBatch(now, "open") }},
+	},
+	"notion": {
+		{"page.created", "A page was created", func(now time.Time) any { return notionEvent(now, "page.created", "page") }},
+		{"page.content_updated", "A page's content changed", func(now time.Time) any { return notionEvent(now, "page.content_updated", "page") }},
+		{"comment.created", "A comment was added", func(now time.Time) any { return notionEvent(now, "comment.created", "comment") }},
+	},
 	"standardwebhooks": {
 		{"invoice.paid", "An invoice was paid", func(now time.Time) any {
 			return map[string]any{"type": "invoice.paid", "timestamp": now.Format(time.RFC3339),
@@ -218,6 +285,52 @@ func cashfreePayment(now time.Time, status string) map[string]any {
 			"order":            map[string]any{"order_id": "order_" + digits(8), "order_amount": 499.0, "order_currency": "INR"},
 			"payment":          map[string]any{"cf_payment_id": digits(10), "payment_status": status, "payment_amount": 499.0, "payment_currency": "INR", "payment_group": "upi"},
 			"customer_details": map[string]string{"customer_email": "customer@example.com", "customer_phone": "9876543210"}}}
+}
+
+func slackEvent(now time.Time, event map[string]any) map[string]any {
+	return map[string]any{"token": "verification-token-unused", "team_id": "T0" + digits(8), "api_app_id": "A0" + digits(8), "type": "event_callback",
+		"event_id": "Ev0" + id("", 9), "event_time": now.Unix(), "event": event}
+}
+
+func twilioSMS(status string) url.Values {
+	return url.Values{"MessageSid": {"SM" + strings.ToLower(id("", 32))}, "AccountSid": {"AC" + strings.ToLower(id("", 32))},
+		"From": {"+14155550100"}, "To": {"+919876543210"}, "MessageStatus": {status}, "ApiVersion": {"2010-04-01"}}
+}
+
+func hubspotBatch(now time.Time, subscription, property string) []map[string]any {
+	e := map[string]any{"eventId": digits(10), "subscriptionId": digits(7), "portalId": digits(8), "appId": digits(7),
+		"occurredAt": now.UnixMilli(), "subscriptionType": subscription, "attemptNumber": 0, "objectId": digits(9), "changeSource": "CRM"}
+	if property != "" {
+		e["propertyName"], e["propertyValue"] = property, "closedwon"
+	}
+	return []map[string]any{e}
+}
+
+func squareEvent(now time.Time, typ, objectKey string, object map[string]any) map[string]any {
+	return map[string]any{"merchant_id": id("ML", 12), "type": typ, "event_id": strings.ToLower(id("", 8) + "-" + id("", 4) + "-" + id("", 4) + "-" + id("", 4) + "-" + id("", 12)),
+		"created_at": now.Format(time.RFC3339), "data": map[string]any{"type": strings.Split(typ, ".")[0], "id": object["id"], "object": map[string]any{objectKey: object}}}
+}
+
+func sendgridBatch(now time.Time, event string) []map[string]any {
+	var out []map[string]any
+	for _, to := range []string{"asha@example.com", "ravi@example.com"} {
+		e := map[string]any{"email": to, "timestamp": now.Unix(), "event": event, "sg_event_id": id("", 22), "sg_message_id": id("", 22) + ".filter0001",
+			"smtp-id": "<" + id("", 16) + "@mail.example.com>", "category": []string{"receipts"}}
+		if event == "bounce" {
+			e["reason"], e["status"], e["type"] = "550 5.1.1 The email account that you tried to reach does not exist.", "5.1.1", "bounce"
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+func notionEvent(now time.Time, typ, entity string) map[string]any {
+	uuid := func() string {
+		return strings.ToLower(id("", 8) + "-" + id("", 4) + "-" + id("", 4) + "-" + id("", 4) + "-" + id("", 12))
+	}
+	return map[string]any{"id": uuid(), "timestamp": now.Format(time.RFC3339Nano), "workspace_id": uuid(), "workspace_name": "Acme",
+		"subscription_id": uuid(), "integration_id": uuid(), "type": typ, "attempt_number": 1,
+		"authors": []map[string]string{{"id": uuid(), "type": "person"}}, "entity": map[string]string{"id": uuid(), "type": entity}}
 }
 
 func payuForm(status string) url.Values {

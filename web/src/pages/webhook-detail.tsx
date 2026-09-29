@@ -1,6 +1,7 @@
 import { ArrowLeftIcon, RefreshCwIcon, Trash2Icon } from 'lucide-react'
 import { useState, type SubmitEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import { CopyField, ErrorState, PageHeader, SignatureLabel, StatusBadge } from '@/components/common'
@@ -11,13 +12,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { errorMessage } from '@/lib/api'
+import { errorMessage, get } from '@/lib/api'
 import { providerLabel, timeAgo } from '@/lib/format'
 import { ContractStateBadge } from '@/components/contract'
 import { DestinationsCard } from '@/components/destinations-card'
 import { SimulatorCard } from '@/components/simulator-card'
 import { RepairRulesCard } from '@/components/repair'
-import { useContracts, useDeleteWebhook, useEvents, useRotateWebhookURL, useUpdateWebhook, useWebhook } from '@/lib/queries'
+import { useContracts, useDeleteWebhook, useEvents, useOrgId, useRotateWebhookURL, useUpdateWebhook, useWebhook } from '@/lib/queries'
 import { useCanManage } from '@/lib/role'
 import type { Webhook } from '@/lib/types'
 
@@ -62,6 +63,35 @@ const setupSteps: Record<string, string[]> = {
     'For senders that follow the Standard Webhooks spec or use Svix (e.g. Resend, Clerk, OpenAI, Supabase): they send webhook-id / webhook-timestamp / webhook-signature (or svix-*) headers.',
     "Add the URL above as a webhook endpoint in the sender's dashboard.",
     'Copy the endpoint\'s signing secret (whsec_…, or a whpk_… public key for signed-with-Ed25519 endpoints) and enter it below.',
+  ],
+  slack: [
+    'First enter your app\'s Signing Secret below (api.slack.com/apps → your app → Basic Information → App Credentials).',
+    'Then Event Subscriptions → Enable Events → Request URL: paste the URL above. Slack checks it, and Relaya answers automatically.',
+    'Subscribe to the bot or workspace events you need and save.',
+  ],
+  twilio: [
+    'Twilio Console → Phone Numbers → your number (or a Messaging Service): paste the URL above as the webhook or status callback URL, exactly as shown.',
+    'Enter your Auth Token (Console → Account Info) below. Twilio signs the full URL, so if the URL ever changes, update it at Twilio too.',
+  ],
+  hubspot: [
+    'HubSpot developer account → your app → Webhooks → Target URL: paste the URL above, then create your subscriptions.',
+    'Enter the app\'s Client secret (Auth tab) below. HubSpot signs each request with it (v3, and older v1/v2 are accepted).',
+  ],
+  square: [
+    'Square Developer Dashboard → your app → Webhooks → Subscriptions → Add subscription: paste the URL above as the Notification URL and pick the events.',
+    'Copy the subscription\'s Signature key and enter it below.',
+  ],
+  segment: [
+    'Segment → Connections → Destinations → Add destination → Webhooks: paste the URL above.',
+    'Set a Shared Secret in the destination settings and enter the same secret below.',
+  ],
+  sendgrid: [
+    'SendGrid → Settings → Mail Settings → Event Webhook: paste the URL above as the Post URL and choose the events.',
+    'Turn on Signed Event Webhook, copy the Verification Key and paste it below. It is a public key, so the test button can\'t sign SendGrid events; send one from SendGrid instead.',
+  ],
+  notion: [
+    'notion.so/profile/integrations → your integration → Webhooks → Create a subscription: paste the URL above and choose the events.',
+    'Notion sends a one-time verification token. It appears on this page: paste it back into Notion to verify, and use it as this webhook\'s signing secret.',
   ],
   jira: [
     'Jira → Settings (cog) → System → WebHooks → Create a WebHook (needs Jira admin).',
@@ -128,6 +158,8 @@ function WebhookView({ w }: { w: Webhook }) {
         </Card>
 
         <DestinationsCard webhookId={w.id} />
+
+        {canManage && w.provider === 'notion' && <NotionVerificationCard w={w} />}
 
         {canManage && <SimulatorCard w={w} />}
 
@@ -215,6 +247,63 @@ function RecentEvents({ webhookId }: { webhookId: string }) {
               </li>
             ))}
           </ul>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * Notion verifies a new subscription by sending a token that must be pasted back
+ * into Notion, and that is also the signing secret. The Explorer masks tokens, so
+ * admins see it here, read from the raw event.
+ */
+function NotionVerificationCard({ w }: { w: Webhook }) {
+  const orgId = useOrgId()
+  const events = useEvents({ webhook_id: w.id, type: 'verification' })
+  const update = useUpdateWebhook(w.id)
+  const latest = events.data?.pages[0]?.data[0]
+  const raw = useQuery({
+    queryKey: ['raw-event', orgId, latest?.id],
+    queryFn: () => get<{ body_base64: string }>(`/orgs/${orgId}/events/${latest!.id}/raw`),
+    enabled: !!latest,
+  })
+  let token = ''
+  try {
+    token = raw.data ? (JSON.parse(atob(raw.data.body_base64)).verification_token ?? '') : ''
+  } catch {
+    token = ''
+  }
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader>
+        <CardTitle>Notion verification token</CardTitle>
+        <CardDescription>
+          Notion sends this once, when you create the subscription. Paste it back into Notion to verify the subscription, and save it as this
+          webhook's signing secret so Relaya can check Notion's signatures.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid min-w-0 gap-3">
+        {!latest ? (
+          <p className="text-sm text-muted-foreground">Nothing yet. Create the subscription in Notion with the URL above; the token appears here within seconds.</p>
+        ) : !token ? (
+          <Skeleton className="h-9 w-full" />
+        ) : (
+          <>
+            <CopyField value={token} />
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="outline"
+                disabled={update.isPending}
+                onClick={() =>
+                  update.mutateAsync({ signing_secret: token }).then(() => toast.success('Saved as the signing secret'), (err) => toast.error(errorMessage(err)))
+                }
+              >
+                Use as signing secret
+              </Button>
+              <span className="text-xs text-muted-foreground">Received {timeAgo(latest.received_at)}</span>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

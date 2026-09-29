@@ -25,7 +25,7 @@ export function bytes(n: number): string {
 }
 
 export const providerLabel = (p: string) =>
-  ({ generic: 'Generic (HMAC)', razorpay: 'Razorpay', stripe: 'Stripe', shopify: 'Shopify', github: 'GitHub', standardwebhooks: 'Standard Webhooks (Svix)', cashfree: 'Cashfree', payu: 'PayU', phonepe: 'PhonePe', jira: 'Jira' })[p] ?? p
+  ({ generic: 'Generic (HMAC)', razorpay: 'Razorpay', stripe: 'Stripe', shopify: 'Shopify', github: 'GitHub', standardwebhooks: 'Standard Webhooks (Svix)', cashfree: 'Cashfree', payu: 'PayU', phonepe: 'PhonePe', jira: 'Jira', slack: 'Slack', twilio: 'Twilio', hubspot: 'HubSpot', square: 'Square', segment: 'Segment', sendgrid: 'SendGrid', notion: 'Notion' })[p] ?? p
 
 /** 1,284 -> "1.3K"; small numbers unchanged. */
 export function compact(n: number): string {

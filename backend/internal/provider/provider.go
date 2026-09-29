@@ -35,6 +35,13 @@ type Request struct {
 	Header http.Header
 	Body   []byte
 	Now    time.Time
+	// Method and URLs are for providers that sign the request line (Twilio,
+	// HubSpot v3, Square). URLs are the addresses the provider may have been given
+	// for this webhook, full with query string, most likely first: the configured
+	// public base, then the host the request arrived on. A wrong candidate can only
+	// fail verification; it can't make a forged request pass.
+	Method string
+	URLs   []string
 }
 
 // Config is the per-webhook configuration a provider may need.
@@ -67,6 +74,13 @@ func init() {
 	register(payu{})
 	register(phonepe{})
 	register(jiraProvider{})
+	register(slack{tolerance: 5 * time.Minute})
+	register(twilio{})
+	register(hubspot{tolerance: 5 * time.Minute})
+	register(square{})
+	register(segment{})
+	register(sendgrid{})
+	register(notion{})
 }
 
 // Get returns the named provider, or false if it is unknown.

@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,9 @@ type Handler struct {
 	Vault             vault.Vault
 	MaxBodyBytes      int64
 	TrustProxyHeaders bool // trust X-Real-IP / X-Forwarded-For (only behind our own proxy)
+	// PublicBaseURLs are the public bases of ingest URLs (INGEST_BASE_URL, and any
+	// previous one still given to providers), for providers that sign the URL.
+	PublicBaseURLs []string
 
 	// Rate limits (nil = unlimited). Providers retry a 429 later, so nothing is lost.
 	PerWebhook *ratelimit.Limiter // requests per ingest URL
@@ -92,7 +96,7 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request) error {
 	if !ok {
 		p, _ = provider.Get("generic")
 	}
-	preq := provider.Request{Header: r.Header, Body: body, Now: now}
+	preq := provider.Request{Header: r.Header, Body: body, Now: now, Method: r.Method, URLs: h.publicURLs(r)}
 
 	cfg := provider.Config{SignatureHeader: wh.SignatureHeader}
 	if len(wh.SecretEnc) > 0 {
@@ -102,6 +106,15 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request) error {
 	}
 	sig := p.Verify(preq, cfg)
 	accepted := sig == provider.SigValid || sig == provider.SigNotConfigured
+	// A provider checking a new URL (Slack's url_verification) gets its answer;
+	// the handshake is not an event.
+	if ch, ok := p.(provider.Challenger); ok && accepted {
+		if resp, contentType, ok := ch.Challenge(preq); ok {
+			w.Header().Set("Content-Type", contentType)
+			_, _ = w.Write(resp)
+			return nil
+		}
+	}
 	status := "received"
 	if !accepted {
 		status = "rejected"
@@ -227,6 +240,35 @@ func enqueueDeliveries(ctx context.Context, tx pgx.Tx, eventID string, ev Event)
 	}
 	_, err = tx.Exec(ctx, `SELECT pg_notify($1, '')`, delivery.NotifyChannel)
 	return err
+}
+
+// publicURLs lists the URLs the provider may have called for this request, for
+// providers that sign the URL: each configured public base, then the host the
+// request arrived on (behind IIS that is the public host, or X-Forwarded-Host).
+func (h *Handler) publicURLs(r *http.Request) []string {
+	path := r.URL.RequestURI() // path and query string, as sent
+	seen := map[string]bool{}
+	var out []string
+	add := func(u string) {
+		if !seen[u] {
+			seen[u] = true
+			out = append(out, u)
+		}
+	}
+	for _, b := range h.PublicBaseURLs {
+		add(strings.TrimRight(b, "/") + path)
+	}
+	host := r.Host
+	if h.TrustProxyHeaders {
+		if fh := r.Header.Get("X-Forwarded-Host"); fh != "" {
+			host = fh
+		}
+	}
+	if host != "" {
+		add("https://" + host + path)
+		add("http://" + host + path)
+	}
+	return out
 }
 
 func nullIfEmpty(s string) *string {

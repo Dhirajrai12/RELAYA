@@ -49,6 +49,7 @@ func main() {
 		Vault:             vault.NewPGVault(pool, wrapper),
 		MaxBodyBytes:      cfg.MaxBodyBytes,
 		TrustProxyHeaders: cfg.TrustProxyHeaders,
+		PublicBaseURLs:    []string{cfg.IngestBaseURL},
 		UnknownIP:         ratelimit.New(60, time.Minute, 30),
 	}
 	if cfg.IngestPerSecond > 0 {

@@ -116,6 +116,14 @@ Callers without access to an org get 404, not 403, so org IDs can't be probed.
 `cashfree` (base64 HMAC-SHA256 of timestamp + body with the PG secret key, 5-minute tolerance),
 `payu` (SHA-512 reverse hash in the body, keyed with the merchant salt; form or JSON),
 `phonepe` (`Authorization` = SHA-256 of `username:password`; proves the sender, not the body),
+`slack` (Events API: `X-Slack-Signature` `v0=` HMAC of `v0:<timestamp>:<body>`, 5-minute tolerance; the signed `url_verification` challenge is answered and not stored; event type is the inner `event.type`),
+`twilio` (`X-Twilio-Signature`: base64 HMAC-SHA1 of the full URL Twilio called plus the sorted form parameters, keyed with the Auth Token; JSON bodies via `bodySHA256`; types `message.<status>` / `call.<status>`),
+`hubspot` (`X-HubSpot-Signature-v3`: base64 HMAC-SHA256 of method + URL + body + timestamp, 5-minute tolerance; v1 and v2 accepted; type from the batch's `subscriptionType`),
+`square` (`x-square-hmacsha256-signature`: base64 HMAC-SHA256 of the notification URL + body; dedup on `event_id`),
+`segment` (`X-Signature`: hex HMAC-SHA1 of the body; type is the track event name, else the call type),
+`sendgrid` (Signed Event Webhook: ECDSA P-256 over timestamp + body, verified with the public verification key; batches typed by their event),
+`notion` (`X-Notion-Signature: sha256=` hex HMAC of the body, keyed with the verification token; the unsigned verification request is accepted and shown on the webhook page).
+Providers that sign the URL are checked against `INGEST_BASE_URL` and the host the request arrived on. Senders built on Svix (Brex, Clerk, Resend…) use `standardwebhooks`.
 `jira` (Jira Cloud system webhooks: `X-Hub-Signature: sha256=<hex HMAC-SHA256 of the body>` when a secret is set; dedup on `X-Atlassian-Webhook-Identifier`, which stays the same on retries; event type from `webhookEvent`, e.g. `jira:issue_created`).
 Add one in `internal/provider`: implement `Verify`, `DedupKey`, `EventType`, register it, and add its case to `Sign` (`sign.go`) and samples to `internal/simulate` (a test checks every sample signs and verifies).
 

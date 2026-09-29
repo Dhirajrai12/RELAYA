@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"crypto/hmac"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
@@ -27,11 +29,12 @@ type Outgoing struct {
 // (a Standard Webhooks whpk_ public key: signing needs the sender's private key).
 var ErrCannotSign = errors.New("this webhook's secret is a public key; only the sender can sign for it")
 
-// Sign returns body as provider name would send it at now. eventType goes where
-// the provider puts it outside the body (Shopify, GitHub); deliveryID is the
+// Sign returns body as provider name would send it at now, POSTed to target (the
+// webhook's ingest URL, which Twilio, HubSpot and Square sign). eventType goes
+// where the provider puts it outside the body (Shopify, GitHub); deliveryID is the
 // provider's delivery ID for header-based deduplication. Without a secret the
 // request is built unsigned, as for a webhook that doesn't check signatures.
-func Sign(name string, body []byte, c Config, now time.Time, eventType, deliveryID string) (Outgoing, error) {
+func Sign(name string, body []byte, c Config, now time.Time, eventType, deliveryID, target string) (Outgoing, error) {
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")
 	secret := c.Secret
@@ -39,6 +42,42 @@ func Sign(name string, body []byte, c Config, now time.Time, eventType, delivery
 	hexMAC := func() string { return hex.EncodeToString(hmacSHA256(secret, body)) }
 
 	switch name {
+	case "slack":
+		ts := strconv.FormatInt(now.Unix(), 10)
+		h.Set("X-Slack-Request-Timestamp", ts)
+		if signed {
+			h.Set("X-Slack-Signature", "v0="+hex.EncodeToString(hmacSHA256(secret, append([]byte("v0:"+ts+":"), body...))))
+		}
+	case "twilio":
+		h.Set("Content-Type", "application/x-www-form-urlencoded")
+		h.Set("I-Twilio-Idempotency-Token", deliveryID)
+		if signed {
+			h.Set("X-Twilio-Signature", base64.StdEncoding.EncodeToString(twilioMAC(secret, target, Request{Body: body})))
+		}
+	case "hubspot":
+		if signed {
+			ts := strconv.FormatInt(now.UnixMilli(), 10)
+			h.Set("X-HubSpot-Request-Timestamp", ts)
+			h.Set("X-HubSpot-Signature-v3", base64.StdEncoding.EncodeToString(hmacSHA256(secret, []byte("POST"+hubspotURI(target)+string(body)+ts))))
+		}
+	case "square":
+		if signed {
+			h.Set("X-Square-Hmacsha256-Signature", base64.StdEncoding.EncodeToString(hmacSHA256(secret, append([]byte(target), body...))))
+		}
+	case "segment":
+		if signed {
+			m := hmac.New(sha1.New, secret)
+			m.Write(body)
+			h.Set("X-Signature", hex.EncodeToString(m.Sum(nil)))
+		}
+	case "sendgrid":
+		if signed { // the secret is SendGrid's public key: only SendGrid can sign
+			return Outgoing{}, ErrCannotSign
+		}
+	case "notion":
+		if signed {
+			h.Set("X-Notion-Signature", "sha256="+hexMAC())
+		}
 	case "razorpay":
 		h.Set("X-Razorpay-Event-Id", deliveryID)
 		if signed {
