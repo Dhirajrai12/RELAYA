@@ -151,11 +151,14 @@ func (s *Server) Routes() http.Handler {
 	h("GET /v1/orgs/{org}/webhooks/{webhook}", s.getWebhook)
 	h("PATCH /v1/orgs/{org}/webhooks/{webhook}", s.updateWebhook)
 	h("POST /v1/orgs/{org}/webhooks/{webhook}/rotate-url", s.rotateWebhookURL)
+	h("GET /v1/orgs/{org}/webhooks/{webhook}/samples", s.listSimulationSamples)
+	h("POST /v1/orgs/{org}/webhooks/{webhook}/simulate", s.simulateEvent)
 	h("DELETE /v1/orgs/{org}/webhooks/{webhook}", s.deleteWebhook)
 
 	h("GET /v1/orgs/{org}/events", s.listEvents)
 	h("GET /v1/orgs/{org}/events/stats", s.eventStats)
 	h("GET /v1/orgs/{org}/events/{event}", s.getEvent)
+	h("GET /v1/orgs/{org}/events/{event}/raw", s.getRawEvent)
 
 	h("GET /v1/orgs/{org}/webhooks/{webhook}/destinations", s.listDestinations)
 	h("POST /v1/orgs/{org}/webhooks/{webhook}/destinations", s.createDestination)

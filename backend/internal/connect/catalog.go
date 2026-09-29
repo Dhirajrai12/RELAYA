@@ -5,7 +5,9 @@
 package connect
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"sort"
@@ -42,6 +44,9 @@ type Provider struct {
 	TokenURLFor func(callback url.Values) (string, error) `json:"-"`
 	// APIBaseFor validates a provider-reported API base URL (Zoho's api_domain).
 	APIBaseFor func(reported string) (string, bool) `json:"-"`
+	// Discover runs once after connecting, with the new token, to find out where
+	// the user's data lives (Atlassian: which Jira site). Its metadata is stored.
+	Discover func(ctx context.Context, hc *http.Client, accessToken string) (Metadata, error) `json:"-"`
 
 	// Proxy: the origins (scheme://host) calls may go to. The user's token is
 	// only ever sent to these. AuthScheme prefixes the token (default "Bearer").
@@ -110,6 +115,18 @@ var (
 			AuthParams: map[string]string{"access_type": "offline", "prompt": "consent", "include_granted_scopes": "true"},
 			// Each Google API has its own host: sheets.googleapis.com, gmail.googleapis.com…
 			ProxyHosts: []*regexp.Regexp{regexp.MustCompile(`^https://[a-z0-9-]+\.googleapis\.com$`)},
+		},
+		"jira": {
+			Key: "jira", Name: "Jira", Auth: OAuth2,
+			DocsURL:  "https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/",
+			APIBase:  "https://api.atlassian.com",
+			AuthURL:  "https://auth.atlassian.com/authorize",
+			TokenURL: "https://auth.atlassian.com/oauth/token",
+			// offline_access: without it Atlassian returns no refresh token.
+			DefaultScopes: []string{"read:jira-work", "write:jira-work", "read:jira-user", "offline_access"},
+			AuthParams:    map[string]string{"audience": "api.atlassian.com", "prompt": "consent"},
+			Discover:      AtlassianDiscover(AtlassianResourcesURL),
+			ProxyHosts:    []*regexp.Regexp{regexp.MustCompile(`^https://api\.atlassian\.com$`)},
 		},
 		"shiprocket": {
 			Key: "shiprocket", Name: "Shiprocket", Auth: Login,

@@ -72,6 +72,26 @@ export interface EventSummary {
   /** Forwarding state across destinations. */
   delivery: EventDeliveryState
   contract_status: EventContractStatus
+  /** Sent with the event simulator (not learned by contracts). */
+  simulated: boolean
+}
+
+/** A ready-to-send sample event for a webhook's provider. */
+export interface SimulationSample {
+  type: string
+  description: string
+  /** JSON, or form-encoded for PayU. */
+  payload: string
+}
+
+export interface SimulateResult {
+  id: string
+  duplicate: boolean
+  event_type: string
+  status: EventStatus
+  signature: SignatureResult
+  /** How many destinations it was queued for. */
+  deliveries: number
 }
 
 export interface EventDetail extends EventSummary {
@@ -330,7 +350,7 @@ export type AlertKind =
   | 'connection_recovered'
   | 'sync_failing'
   | 'sync_recovered'
-export type AlertChannelType = 'slack' | 'email' | 'webhook'
+export type AlertChannelType = 'slack' | 'email' | 'webhook' | 'jira'
 
 export interface AlertChannel {
   id: string
@@ -361,6 +381,9 @@ export interface AlertLogEntry {
   last_error: string
   created_at: string
   sent_at: string | null
+  /** What the channel made of it, e.g. a Jira issue key, and its link. */
+  external_ref: string
+  external_url: string
 }
 
 export type RepairOpKind = 'convert' | 'rename' | 'set' | 'default' | 'remove' | 'map'

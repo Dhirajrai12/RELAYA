@@ -15,6 +15,7 @@ import { errorMessage } from '@/lib/api'
 import { providerLabel, timeAgo } from '@/lib/format'
 import { ContractStateBadge } from '@/components/contract'
 import { DestinationsCard } from '@/components/destinations-card'
+import { SimulatorCard } from '@/components/simulator-card'
 import { RepairRulesCard } from '@/components/repair'
 import { useContracts, useDeleteWebhook, useEvents, useRotateWebhookURL, useUpdateWebhook, useWebhook } from '@/lib/queries'
 import { useCanManage } from '@/lib/role'
@@ -61,6 +62,11 @@ const setupSteps: Record<string, string[]> = {
     'For senders that follow the Standard Webhooks spec or use Svix (e.g. Resend, Clerk, OpenAI, Supabase): they send webhook-id / webhook-timestamp / webhook-signature (or svix-*) headers.',
     "Add the URL above as a webhook endpoint in the sender's dashboard.",
     'Copy the endpoint\'s signing secret (whsec_…, or a whpk_… public key for signed-with-Ed25519 endpoints) and enter it below.',
+  ],
+  jira: [
+    'Jira → Settings (cog) → System → WebHooks → Create a WebHook (needs Jira admin).',
+    'Paste the URL above, choose the events (e.g. Issue created / updated, Comment created), and optionally a JQL filter.',
+    'Set a Secret there and enter the same secret below: Jira then signs every request (X-Hub-Signature).',
   ],
   generic: [
     'Configure the sender to POST JSON to the URL above.',
@@ -122,6 +128,8 @@ function WebhookView({ w }: { w: Webhook }) {
         </Card>
 
         <DestinationsCard webhookId={w.id} />
+
+        {canManage && <SimulatorCard w={w} />}
 
         <RepairRulesCard webhookId={w.id} />
 

@@ -157,9 +157,9 @@ func (r *Runner) RunOne(ctx context.Context, syncID string) {
 		name := s.integrationKey + " " + s.model + " for " + s.endUser
 		switch {
 		case runErr != nil && failures == FailingAfter && !broken:
-			return alerts.Enqueue(ctx, tx, s.orgID, alerts.SyncFailingAlert(name, errText, failures))
+			return alerts.Enqueue(ctx, tx, s.orgID, alerts.SyncFailingAlert(s.id, name, errText, failures))
 		case runErr == nil && s.failures >= FailingAfter:
-			return alerts.Enqueue(ctx, tx, s.orgID, alerts.SyncRecoveredAlert(name))
+			return alerts.Enqueue(ctx, tx, s.orgID, alerts.SyncRecoveredAlert(s.id, name))
 		}
 		return nil
 	})

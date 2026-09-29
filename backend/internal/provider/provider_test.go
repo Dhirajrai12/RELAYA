@@ -287,3 +287,44 @@ func TestGenericFallbacks(t *testing.T) {
 		t.Errorf("expected body hash dedup key, got %q", k)
 	}
 }
+
+func TestJira(t *testing.T) {
+	p, _ := Get("jira")
+	body := `{"timestamp":1759046400000,"webhookEvent":"jira:issue_created","issue":{"id":"10001","key":"OPS-1"}}`
+	secret := []byte("jira-secret")
+	sig := "sha256=" + hex.EncodeToString(hmacSHA256(secret, []byte(body)))
+	cfg := Config{Secret: secret}
+
+	for name, tc := range map[string]struct {
+		header string
+		c      Config
+		want   SignatureResult
+	}{
+		"valid":           {sig, cfg, SigValid},
+		"method any case": {"SHA256=" + strings.TrimPrefix(sig, "sha256="), cfg, SigValid},
+		"wrong secret":    {sig, Config{Secret: []byte("other")}, SigInvalid},
+		"other method":    {"sha1=" + strings.TrimPrefix(sig, "sha256="), cfg, SigInvalid},
+		"no method":       {strings.TrimPrefix(sig, "sha256="), cfg, SigInvalid},
+		"missing":         {"", cfg, SigMissing},
+		"no secret set":   {sig, Config{}, SigNotConfigured},
+	} {
+		r := req(body)
+		if tc.header != "" {
+			r = req(body, "X-Hub-Signature", tc.header)
+		}
+		if got := p.Verify(r, tc.c); got != tc.want {
+			t.Errorf("%s: got %s want %s", name, got, tc.want)
+		}
+	}
+	if got := p.Verify(req(strings.Replace(body, "OPS-1", "OPS-2", 1), "X-Hub-Signature", sig), cfg); got != SigInvalid {
+		t.Errorf("tampered body: got %s", got)
+	}
+
+	r := req(body, "X-Atlassian-Webhook-Identifier", "b7f0c1e2-delivery")
+	if p.EventType(r) != "jira:issue_created" || DedupKey(p, r) != "b7f0c1e2-delivery" {
+		t.Errorf("type=%q dedup=%q", p.EventType(r), DedupKey(p, r))
+	}
+	if got := DedupKey(p, req(body)); got != "jira:issue_created:1759046400000:10001:" {
+		t.Errorf("fallback dedup %q", got)
+	}
+}

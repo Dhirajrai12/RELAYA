@@ -27,7 +27,7 @@ func trackHealth(ctx context.Context, tx pgx.Tx, j job, outcome Outcome, res Res
 		if err != nil || health != "failing" {
 			return err
 		}
-		return alerts.Enqueue(ctx, tx, orgID, alerts.DestinationRecoveredAlert(name, url))
+		return alerts.Enqueue(ctx, tx, orgID, alerts.DestinationRecoveredAlert(j.DestinationID, name, url))
 	}
 
 	err := tx.QueryRow(ctx, `
@@ -43,5 +43,5 @@ func trackHealth(ctx context.Context, tx pgx.Tx, j job, outcome Outcome, res Res
 	if _, err := tx.Exec(ctx, `UPDATE destinations SET health = 'failing' WHERE id = $1`, j.DestinationID); err != nil {
 		return err
 	}
-	return alerts.Enqueue(ctx, tx, orgID, alerts.DestinationFailingAlert(name, url, res.StatusCode, errText, streak))
+	return alerts.Enqueue(ctx, tx, orgID, alerts.DestinationFailingAlert(j.DestinationID, name, url, res.StatusCode, errText, streak))
 }

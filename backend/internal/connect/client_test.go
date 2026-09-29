@@ -203,3 +203,86 @@ func readAll(r *http.Request) string {
 		}
 	}
 }
+
+func TestJiraConnectFindsTheSiteAndRotatesRefreshTokens(t *testing.T) {
+	jira, _ := Get("jira")
+	u, _ := url.Parse(AuthorizeURL(jira, "cid", "https://relaya.example/cb", jira.DefaultScopes, "st", ""))
+	q := u.Query()
+	if u.Host != "auth.atlassian.com" || q.Get("audience") != "api.atlassian.com" || q.Get("prompt") != "consent" ||
+		!strings.Contains(q.Get("scope"), "offline_access") || !strings.Contains(q.Get("scope"), "read:jira-work") {
+		t.Fatalf("authorize URL: %s", u)
+	}
+
+	refreshes := 0
+	tokens := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		switch r.Form.Get("grant_type") {
+		case "authorization_code":
+			w.Write([]byte(`{"access_token":"at-1","refresh_token":"rt-1","expires_in":3600,"scope":"read:jira-work offline_access"}`))
+		case "refresh_token":
+			refreshes++
+			if r.Form.Get("refresh_token") != "rt-1" || refreshes > 1 { // each refresh token works once
+				w.WriteHeader(403)
+				w.Write([]byte(`{"error":"invalid_grant","error_description":"Unknown or invalid refresh token."}`))
+				return
+			}
+			w.Write([]byte(`{"access_token":"at-2","refresh_token":"rt-2","expires_in":3600}`))
+		}
+	}))
+	defer tokens.Close()
+	sites := `[{"id":"11111111-2222-3333-4444-555555555555","url":"https://acme.atlassian.net","name":"acme","scopes":["read:jira-work"]},
+	           {"id":"99999999-2222-3333-4444-555555555555","url":"https://other.atlassian.net","name":"other","scopes":["read:jira-work"]},
+	           {"id":"aaaaaaaa-2222-3333-4444-555555555555","url":"https://acme.atlassian.net/wiki","name":"acme","scopes":["read:confluence-content.all"]}]`
+	resources := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer at-1" {
+			w.WriteHeader(401)
+			return
+		}
+		w.Write([]byte(sites))
+	}))
+	defer resources.Close()
+
+	fake := *jira
+	fake.TokenURL = tokens.URL
+	fake.Discover = AtlassianDiscover(resources.URL)
+	defer Override(&fake)()
+	c := NewClient()
+	cred, meta, err := c.Exchange(context.Background(), &fake, App{ClientID: "cid", ClientSecret: "cs"}, "code", "https://relaya.example/cb", "", url.Values{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta["api_base"] != "https://api.atlassian.com/ex/jira/11111111-2222-3333-4444-555555555555" || meta["site_url"] != "https://acme.atlassian.net" ||
+		len(meta["sites"].([]map[string]string)) != 2 {
+		t.Fatalf("meta: %v", meta)
+	}
+	// Refresh tokens rotate: the new one is kept, and the old one no longer works.
+	fresh, _, err := c.Refresh(context.Background(), &fake, App{ClientID: "cid", ClientSecret: "cs"}, cred)
+	if err != nil || fresh.AccessToken != "at-2" || fresh.RefreshToken != "rt-2" {
+		t.Fatalf("refresh: %+v %v", fresh, err)
+	}
+	_, _, err = c.Refresh(context.Background(), &fake, App{ClientID: "cid", ClientSecret: "cs"}, cred)
+	var ce *Error
+	if !errors.As(err, &ce) || !ce.Permanent {
+		t.Fatalf("reused refresh token: %v", err)
+	}
+
+	// An account without any Jira site can't connect.
+	sites = `[{"id":"aaaaaaaa-2222-3333-4444-555555555555","url":"https://acme.atlassian.net/wiki","scopes":["read:confluence-content.all"]}]`
+	if _, _, err := c.Exchange(context.Background(), &fake, App{ClientID: "cid"}, "code", "https://relaya.example/cb", "", url.Values{}); err == nil || !strings.Contains(err.Error(), "any Jira site") {
+		t.Fatalf("no site: %v", err)
+	}
+}
+
+func TestJiraProxyHosts(t *testing.T) {
+	jira, _ := Get("jira")
+	base := "https://api.atlassian.com/ex/jira/11111111-2222-3333-4444-555555555555"
+	if full, _, err := proxyURL(jira, base, base, "/rest/api/3/search/jql", "jql=project%3DOPS"); err != nil ||
+		full != base+"/rest/api/3/search/jql?jql=project%3DOPS" {
+		t.Fatalf("proxy url: %s %v", full, err)
+	}
+	for _, evil := range []string{"https://acme.atlassian.net", "https://api.atlassian.com.evil.example", "http://api.atlassian.com"} {
+		if _, _, err := proxyURL(jira, base, evil, "/x", ""); err == nil {
+			t.Errorf("%s allowed", evil)
+		}
+	}
+}

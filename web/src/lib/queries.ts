@@ -4,6 +4,8 @@ import { del, get, patch, post } from './api'
 import { useAuth } from './auth'
 import { useLiveInterval } from './realtime'
 import type {
+  SimulateResult,
+  SimulationSample,
   RepairOp,
   RepairPreview,
   RepairRule,
@@ -200,6 +202,29 @@ export function useUpdateWebhook(id: string) {
     onSuccess: (w) => {
       qc.setQueryData(['webhooks', orgId, w.id], w)
       upsertInList(qc, ['webhooks', orgId], w)
+    },
+  })
+}
+
+/** Sample events for a webhook's provider, with fresh IDs on each fetch. */
+export function useSimulationSamples(webhookId: string) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['sim-samples', orgId, webhookId],
+    queryFn: () => get<{ provider: string; signed: boolean; data: SimulationSample[] }>(orgPath(orgId, `/webhooks/${webhookId}/samples`)),
+    staleTime: Infinity,
+  })
+}
+
+/** Signs a sample like the provider would and runs it through ingest. */
+export function useSimulateEvent(webhookId: string) {
+  const orgId = useOrgId()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { event_type: string; payload: string }) => post<SimulateResult>(orgPath(orgId, `/webhooks/${webhookId}/simulate`), v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['events', orgId] })
+      qc.invalidateQueries({ queryKey: ['event-stats', orgId] })
     },
   })
 }
@@ -605,6 +630,7 @@ export interface AlertChannelInput {
   url?: string
   email?: string
   events: AlertChannel['events']
+  jira?: { site: string; email: string; api_token: string; project: string; issue_type?: string }
 }
 
 export function useCreateAlertChannel() {

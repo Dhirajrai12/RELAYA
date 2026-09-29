@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -125,6 +126,10 @@ func (s *Server) createAlertChannel(w http.ResponseWriter, r *http.Request) erro
 		URL    string   `json:"url"`
 		Email  string   `json:"email"`
 		Events []string `json:"events"`
+		Jira   *struct {
+			alerts.JiraConfig
+			APIToken string `json:"api_token"`
+		} `json:"jira"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -141,7 +146,32 @@ func (s *Server) createAlertChannel(w http.ResponseWriter, r *http.Request) erro
 	var target string
 	var urlEnc, secretEnc []byte
 	var secret string
+	config := []byte("{}")
 	switch in.Type {
+	case "jira":
+		if in.Jira == nil {
+			return httpx.BadRequest("jira settings are required: site, email, api_token, project")
+		}
+		cfg := in.Jira.JiraConfig
+		if err := cfg.Normalize(); err != nil {
+			return httpx.BadRequest("%v", err)
+		}
+		if err := s.DeliveryPolicy.ValidateURL(cfg.Site); err != nil {
+			return httpx.BadRequest("site: %v", err)
+		}
+		token := strings.TrimSpace(in.Jira.APIToken)
+		if token == "" || len(token) > 1000 {
+			return httpx.BadRequest("api_token is required (create one at id.atlassian.com → Security → API tokens)")
+		}
+		// Check with Jira now, so a typo shows up here rather than in a failed alert later.
+		if err := s.AlertSender.CheckJira(r.Context(), cfg, token); err != nil {
+			return httpx.BadRequest("%v", err)
+		}
+		target = cfg.Project + " · " + strings.TrimPrefix(cfg.Site, "https://")
+		if secretEnc, err = s.Vault.Encrypt(r.Context(), orgID, []byte(token)); err != nil {
+			return err
+		}
+		config, _ = json.Marshal(cfg)
 	case "slack":
 		u := strings.TrimSpace(in.URL)
 		if !strings.HasPrefix(u, "https://hooks.slack.com/") || len(u) > 500 {
@@ -181,16 +211,16 @@ func (s *Server) createAlertChannel(w http.ResponseWriter, r *http.Request) erro
 		}
 		target = addr.Address
 	default:
-		return httpx.BadRequest("type must be slack, email or webhook")
+		return httpx.BadRequest("type must be slack, email, webhook or jira")
 	}
 
 	var v alertChannelView
 	err = s.tx(r.Context(), func(tx pgx.Tx) error {
 		var id string
 		if err := tx.QueryRow(r.Context(), `
-			INSERT INTO alert_channels (org_id, type, name, target, url_enc, secret_enc, events)
-			VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-			orgID, in.Type, name, target, urlEnc, secretEnc, events).Scan(&id); err != nil {
+			INSERT INTO alert_channels (org_id, type, name, target, url_enc, secret_enc, events, config)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+			orgID, in.Type, name, target, urlEnc, secretEnc, events, config).Scan(&id); err != nil {
 			return err
 		}
 		if v, err = s.getAlertChannel(r.Context(), tx, orgID, id); err != nil {
@@ -344,6 +374,10 @@ type alertLogView struct {
 	LastError   string     `json:"last_error"`
 	CreatedAt   time.Time  `json:"created_at"`
 	SentAt      *time.Time `json:"sent_at"`
+	// What the channel made of it, e.g. a Jira issue key, and its link.
+	ExternalRef string `json:"external_ref"`
+	ExternalURL string `json:"external_url"`
+	config      []byte
 }
 
 func (s *Server) listAlerts(w http.ResponseWriter, r *http.Request) error {
@@ -352,13 +386,25 @@ func (s *Server) listAlerts(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	rows, err := s.Pool.Query(r.Context(), `
-		SELECT a.id, a.channel_id, c.name, c.type, a.kind, a.title, a.status, a.attempts, a.last_error, a.created_at, a.sent_at
+		SELECT a.id, a.channel_id, c.name, c.type, a.kind, a.title, a.status, a.attempts, a.last_error, a.created_at, a.sent_at,
+		       a.external_ref, c.config
 		FROM alerts a JOIN alert_channels c ON c.id = a.channel_id
 		WHERE a.org_id = $1 ORDER BY a.created_at DESC, a.id DESC LIMIT 100`, orgID)
 	if err != nil {
 		return err
 	}
-	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[alertLogView])
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (alertLogView, error) {
+		var v alertLogView
+		err := row.Scan(&v.ID, &v.ChannelID, &v.ChannelName, &v.ChannelType, &v.Kind, &v.Title, &v.Status, &v.Attempts,
+			&v.LastError, &v.CreatedAt, &v.SentAt, &v.ExternalRef, &v.config)
+		if err == nil && v.ChannelType == "jira" && v.ExternalRef != "" {
+			var cfg alerts.JiraConfig
+			if json.Unmarshal(v.config, &cfg) == nil {
+				v.ExternalURL = cfg.IssueURL(v.ExternalRef)
+			}
+		}
+		return v, err
+	})
 	if err != nil {
 		return err
 	}

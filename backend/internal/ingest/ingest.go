@@ -150,6 +150,9 @@ type Event struct {
 	Payload                     []byte
 	SourceIP                    *string
 	ReceivedAt                  time.Time
+	// Simulated events come from the event simulator: forwarded like any other,
+	// but never learned or checked by contracts.
+	Simulated bool
 }
 
 // Store writes the event, queues its deliveries and contract check. Accepted
@@ -184,11 +187,11 @@ func StoreTx(ctx context.Context, tx pgx.Tx, ev Event, dedup bool) (id string, d
 	}
 	err = tx.QueryRow(ctx, `
 		INSERT INTO events (id, org_id, project_id, webhook_id, dedup_key, type, status, signature,
-		                    content_type, headers, payload, payload_size, source_ip, received_at, contract_status)
-		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		                    content_type, headers, payload, payload_size, source_ip, received_at, contract_status, simulated)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		RETURNING id`,
 		nullIfEmpty(id), ev.OrgID, ev.ProjectID, ev.WebhookID, ev.DedupKey, ev.Type, ev.Status, ev.Signature,
-		ev.ContentType, ev.Headers, ev.Payload, len(ev.Payload), ev.SourceIP, ev.ReceivedAt, contractStatus(ev, dedup)).Scan(&id)
+		ev.ContentType, ev.Headers, ev.Payload, len(ev.Payload), ev.SourceIP, ev.ReceivedAt, contractStatus(ev, dedup), ev.Simulated).Scan(&id)
 	if err != nil {
 		return "", false, err
 	}
@@ -334,14 +337,14 @@ func alertSignatureFailure(ctx context.Context, tx pgx.Tx, webhookID string) err
 	if err != nil {
 		return err
 	}
-	return alerts.Enqueue(ctx, tx, orgID, alerts.SignatureFailuresAlert(name))
+	return alerts.Enqueue(ctx, tx, orgID, alerts.SignatureFailuresAlert(webhookID, name))
 }
 
 // contractStatus is "pending" for accepted events that can be checked against a
 // contract (a JSON object with an event type), else "none".
 func contractStatus(ev Event, accepted bool) string {
 	body := bytes.TrimSpace(ev.Payload)
-	if !accepted || ev.Type == "" || len(body) == 0 || body[0] != '{' {
+	if !accepted || ev.Simulated || ev.Type == "" || len(body) == 0 || body[0] != '{' {
 		return "none"
 	}
 	return "pending"

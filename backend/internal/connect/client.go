@@ -139,6 +139,15 @@ func (c *Client) Exchange(ctx context.Context, p *Provider, app App, code, redir
 	if tokenURL != p.TokenURL {
 		cred.TokenURL = tokenURL
 	}
+	if p.Discover != nil {
+		found, err := p.Discover(ctx, c.HTTP, cred.AccessToken)
+		if err != nil {
+			return Credentials{}, nil, err
+		}
+		for k, v := range found {
+			meta[k] = v
+		}
+	}
 	if cred.RefreshToken == "" && cred.ExpiresAt != nil {
 		// Without a refresh token the connection dies when this token expires.
 		meta["warning"] = "the provider returned no refresh token; the connection will stop working when the access token expires"

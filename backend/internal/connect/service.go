@@ -241,7 +241,7 @@ func (s *Service) fail(ctx context.Context, tx pgx.Tx, c conn, ce *Error) error 
 	if err := audit.Record(ctx, tx, e); err != nil {
 		return err
 	}
-	return alerts.Enqueue(ctx, tx, c.orgID, alerts.ConnectionBrokenAlert(c.integrationName, c.endUserID, msg))
+	return alerts.Enqueue(ctx, tx, c.orgID, alerts.ConnectionBrokenAlert(c.id, c.integrationName, c.endUserID, msg))
 }
 
 func (s *Service) recovered(ctx context.Context, tx pgx.Tx, orgID, connID string) error {
@@ -253,7 +253,7 @@ func (s *Service) recovered(ctx context.Context, tx pgx.Tx, orgID, connID string
 	if err := audit.Record(ctx, tx, audit.Entry{OrgID: orgID, ActorType: "system", Action: "connection.recovered", TargetType: "connection", TargetID: connID}); err != nil {
 		return err
 	}
-	return alerts.Enqueue(ctx, tx, orgID, alerts.ConnectionRecoveredAlert(name, endUser))
+	return alerts.Enqueue(ctx, tx, orgID, alerts.ConnectionRecoveredAlert(connID, name, endUser))
 }
 
 // RunRefresher refreshes tokens before they expire, until ctx is done.

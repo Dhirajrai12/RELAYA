@@ -66,6 +66,7 @@ func init() {
 	register(cashfree{tolerance: 5 * time.Minute})
 	register(payu{})
 	register(phonepe{})
+	register(jiraProvider{})
 }
 
 // Get returns the named provider, or false if it is unknown.
@@ -480,6 +481,50 @@ func (phonepe) DedupKey(r Request) string {
 }
 
 func (phonepe) EventType(r Request) string { return jsonString(r.Body, "event") }
+
+// ---- Jira Cloud: X-Hub-Signature = "sha256=" + hex HMAC-SHA256(secret, body) ---
+//
+// Jira system webhooks (Settings → System → WebHooks) sign the body when a secret
+// is set. X-Atlassian-Webhook-Identifier names the delivery and stays the same on
+// retries; the event type is the body's webhookEvent, e.g. "jira:issue_created".
+
+type jiraProvider struct{}
+
+func (jiraProvider) Name() string { return "jira" }
+
+func (jiraProvider) Verify(r Request, c Config) SignatureResult {
+	if len(c.Secret) == 0 {
+		return SigNotConfigured
+	}
+	got := r.Header.Get("X-Hub-Signature")
+	if got == "" {
+		return SigMissing
+	}
+	method, hexSig, ok := strings.Cut(got, "=")
+	if !ok || !strings.EqualFold(method, "sha256") {
+		return SigInvalid
+	}
+	return compareHex(hexSig, hmacSHA256(c.Secret, r.Body))
+}
+
+func (jiraProvider) DedupKey(r Request) string {
+	if id := r.Header.Get("X-Atlassian-Webhook-Identifier"); id != "" {
+		return id
+	}
+	// Older senders: the event, its time and what it is about.
+	var m struct {
+		Event     string              `json:"webhookEvent"`
+		Timestamp json.Number         `json:"timestamp"`
+		Issue     struct{ ID string } `json:"issue"`
+		Comment   struct{ ID string } `json:"comment"`
+	}
+	if json.Unmarshal(r.Body, &m) != nil || m.Event == "" || m.Timestamp == "" {
+		return ""
+	}
+	return strings.Join([]string{m.Event, m.Timestamp.String(), m.Issue.ID, m.Comment.ID}, ":")
+}
+
+func (jiraProvider) EventType(r Request) string { return jsonString(r.Body, "webhookEvent") }
 
 // ---- helpers ------------------------------------------------------------------
 

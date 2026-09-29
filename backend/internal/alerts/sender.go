@@ -76,9 +76,24 @@ type queued struct {
 	id                int64
 	orgID, kind       string
 	title, body, link string
+	subject           string
 	attempts          int
+	channelID         string
 	chType, target    string
 	urlEnc, secretEnc []byte
+	config            []byte
+}
+
+const queuedSelect = `
+	SELECT al.id, al.org_id, al.kind, al.title, al.body, al.link, al.subject, al.attempts,
+	       c.id, c.type, c.target, c.url_enc, c.secret_enc, c.config
+	FROM alerts al JOIN alert_channels c ON c.id = al.channel_id`
+
+func scanQueued(row pgx.Row) (queued, error) {
+	var a queued
+	err := row.Scan(&a.id, &a.orgID, &a.kind, &a.title, &a.body, &a.link, &a.subject, &a.attempts,
+		&a.channelID, &a.chType, &a.target, &a.urlEnc, &a.secretEnc, &a.config)
+	return a, err
 }
 
 // RunOnce sends up to max due alerts and returns how many it attempted.
@@ -100,13 +115,9 @@ func (s *Sender) sendNext(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	defer tx.Rollback(ctx)
-	var a queued
-	err = tx.QueryRow(ctx, `
-		SELECT al.id, al.org_id, al.kind, al.title, al.body, al.link, al.attempts, c.type, c.target, c.url_enc, c.secret_enc
-		FROM alerts al JOIN alert_channels c ON c.id = al.channel_id
+	a, err := scanQueued(tx.QueryRow(ctx, queuedSelect+`
 		WHERE al.status = 'pending' AND al.next_attempt_at <= now()
-		ORDER BY al.next_attempt_at LIMIT 1 FOR UPDATE OF al SKIP LOCKED`).
-		Scan(&a.id, &a.orgID, &a.kind, &a.title, &a.body, &a.link, &a.attempts, &a.chType, &a.target, &a.urlEnc, &a.secretEnc)
+		ORDER BY al.next_attempt_at LIMIT 1 FOR UPDATE OF al SKIP LOCKED`))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -114,11 +125,12 @@ func (s *Sender) sendNext(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	sendErr := s.send(ctx, a)
+	ref, sendErr := s.send(ctx, tx, a)
 	a.attempts++
 	switch {
 	case sendErr == nil:
-		_, err = tx.Exec(ctx, `UPDATE alerts SET status = 'sent', attempts = $2, sent_at = now(), last_error = '' WHERE id = $1`, a.id, a.attempts)
+		_, err = tx.Exec(ctx, `UPDATE alerts SET status = 'sent', attempts = $2, sent_at = now(), last_error = '', external_ref = $3 WHERE id = $1`,
+			a.id, a.attempts, ref)
 	case a.attempts >= maxAttempts || errors.Is(sendErr, errNoSMTP):
 		_, err = tx.Exec(ctx, `UPDATE alerts SET status = 'failed', attempts = $2, last_error = $3 WHERE id = $1`, a.id, a.attempts, sendErr.Error())
 	default:
@@ -137,21 +149,18 @@ func (s *Sender) sendNext(ctx context.Context) (bool, error) {
 
 // SendNow sends one queued alert immediately and reports the result (used by "Send test").
 func (s *Sender) SendNow(ctx context.Context, alertID int64) error {
-	var a queued
-	err := s.Pool.QueryRow(ctx, `
-		SELECT al.id, al.org_id, al.kind, al.title, al.body, al.link, al.attempts, c.type, c.target, c.url_enc, c.secret_enc
-		FROM alerts al JOIN alert_channels c ON c.id = al.channel_id WHERE al.id = $1`, alertID).
-		Scan(&a.id, &a.orgID, &a.kind, &a.title, &a.body, &a.link, &a.attempts, &a.chType, &a.target, &a.urlEnc, &a.secretEnc)
+	a, err := scanQueued(s.Pool.QueryRow(ctx, queuedSelect+` WHERE al.id = $1`, alertID))
 	if err != nil {
 		return err
 	}
-	sendErr := s.send(ctx, a)
+	ref, sendErr := s.send(ctx, s.Pool, a)
 	status, msg := "sent", ""
 	if sendErr != nil {
 		status, msg = "failed", sendErr.Error()
 	}
-	_, err = s.Pool.Exec(ctx, `UPDATE alerts SET status = $2, attempts = 1, last_error = $3, sent_at = CASE WHEN $2 = 'sent' THEN now() END WHERE id = $1`,
-		alertID, status, msg)
+	_, err = s.Pool.Exec(ctx, `
+		UPDATE alerts SET status = $2, attempts = 1, last_error = $3, external_ref = $4, sent_at = CASE WHEN $2 = 'sent' THEN now() END
+		WHERE id = $1`, alertID, status, msg, ref)
 	if err == nil {
 		err = notifyLog(ctx, s.Pool, a.orgID)
 	}
@@ -173,34 +182,45 @@ func (s *Sender) link(path string) string {
 	return strings.TrimRight(s.DashboardURL, "/") + path
 }
 
-func (s *Sender) send(ctx context.Context, a queued) error {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+// send delivers a to its channel and returns a reference to what it created there (a Jira
+// issue key), if anything. q is the transaction the alert row is locked in.
+func (s *Sender) send(ctx context.Context, q Querier, a queued) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	switch a.chType {
 	case "slack":
 		url, err := s.Vault.Decrypt(ctx, a.orgID, a.urlEnc)
 		if err != nil {
-			return err
+			return "", err
 		}
-		return s.postJSON(ctx, string(url), SlackPayload(a.title, a.body, s.link(a.link)), nil)
+		return "", s.postJSON(ctx, string(url), SlackPayload(a.title, a.body, s.link(a.link)), nil)
 	case "webhook":
 		url, err := s.Vault.Decrypt(ctx, a.orgID, a.urlEnc)
 		if err != nil {
-			return err
+			return "", err
 		}
 		secret, err := s.Vault.Decrypt(ctx, a.orgID, a.secretEnc)
 		if err != nil {
-			return err
+			return "", err
 		}
 		body, _ := json.Marshal(map[string]any{
 			"type": a.kind, "title": a.title, "body": a.body, "link": s.link(a.link),
 			"org_id": a.orgID, "alert_id": a.id, "sent_at": time.Now().UTC(),
 		})
-		return s.postJSON(ctx, string(url), body, secret)
+		return "", s.postJSON(ctx, string(url), body, secret)
 	case "email":
-		return s.sendEmail(a.target, a.title, a.body+"\n\nOpen in Relaya: "+s.link(a.link))
+		return "", s.sendEmail(a.target, a.title, a.body+"\n\nOpen in Relaya: "+s.link(a.link))
+	case "jira":
+		return s.sendJira(ctx, q, a)
 	}
-	return fmt.Errorf("unknown channel type %q", a.chType)
+	return "", fmt.Errorf("unknown channel type %q", a.chType)
+}
+
+// CheckJira confirms Jira settings and a token work (used when a channel is created).
+func (s *Sender) CheckJira(ctx context.Context, cfg JiraConfig, token string) error {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	return jira{http: s.HTTP, cfg: cfg, token: token}.Check(ctx)
 }
 
 // SlackPayload builds an Incoming Webhook message: bold title, body, link.

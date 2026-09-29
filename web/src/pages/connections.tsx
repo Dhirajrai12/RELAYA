@@ -52,6 +52,12 @@ const setupSteps: Record<string, string[]> = {
     'Authorized redirect URI: {callback}',
     'Set up the OAuth consent screen and enable the APIs you will call (e.g. Google Sheets API), then copy the Client ID and secret.',
   ],
+  jira: [
+    'developer.atlassian.com → Console → Create → OAuth 2.0 integration.',
+    'Authorization → OAuth 2.0 (3LO) → Callback URL: {callback}',
+    'Permissions → Jira API → add the scopes below (read:jira-work, write:jira-work, read:jira-user), then Settings → copy the Client ID and Secret.',
+    'Each user picks their Jira site when they connect; Relaya calls that site for them.',
+  ],
   shiprocket: [
     'No app to create. Each of your users connects with a Shiprocket API user.',
     'They make one in Shiprocket → Settings → API → Configure → Create an API user (its email must differ from their main login).',
@@ -70,7 +76,7 @@ export function ConnectionsPage() {
     <>
       <PageHeader
         title="Connections"
-        description="Let your users connect their Zoho, HubSpot, Google or Shiprocket accounts. Relaya stores their tokens encrypted, keeps them fresh, and alerts you when one breaks."
+        description="Let your users connect their Zoho, HubSpot, Google, Jira or Shiprocket accounts. Relaya stores their tokens encrypted, keeps them fresh, and alerts you when one breaks."
         actions={
           canManage &&
           list.length > 0 && (
@@ -494,6 +500,8 @@ function ConnectionRow({ c, onReconnect, onTry }: { c: Connection; onReconnect: 
   const refresh = useRefreshConnection()
   const remove = useDeleteConnection()
   const warning = typeof c.metadata.warning === 'string' ? c.metadata.warning : ''
+  // Jira: the site this connection calls.
+  const site = typeof c.metadata.site_url === 'string' ? c.metadata.site_url.replace(/^https:\/\//, '') : ''
   const token = c.status === 'broken' ? '' : c.expires_at ? `expires ${timeAgo(c.expires_at)}` : 'no expiry'
   const badge = (
     <Badge
@@ -515,7 +523,8 @@ function ConnectionRow({ c, onReconnect, onTry }: { c: Connection; onReconnect: 
           {c.end_user_id}
         </div>
         <div className="text-xs text-muted-foreground sm:truncate">
-          {c.integration_name} · connected {timeAgo(c.created_at)}
+          {c.integration_name}
+          {site && <> · {site}</>} · connected {timeAgo(c.created_at)}
           {token && <span className="md:hidden"> · {token}</span>}
         </div>
         <div className="mt-1 sm:hidden">{badge}</div>
@@ -619,6 +628,7 @@ const tryExamples: Record<string, { base?: string; path: string; note: string }>
   hubspot: { path: '/crm/v3/objects/contacts?limit=5', note: 'Example: the first 5 contacts.' },
   zoho: { path: '/crm/v2/users?type=CurrentUser', note: 'Example: the connected Zoho CRM user.' },
   shiprocket: { path: '/orders?per_page=5', note: 'Example: the latest 5 orders.' },
+  jira: { path: '/rest/api/3/myself', note: 'Example: the connected Jira user.' },
 }
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']

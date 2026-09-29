@@ -33,10 +33,12 @@ type eventSummary struct {
 	Delivery string `json:"delivery"`
 	// Contract check: none, pending, learning, ok, compatible, suspicious, breaking.
 	ContractStatus string `json:"contract_status"`
+	// Sent with the event simulator (not learned by contracts).
+	Simulated bool `json:"simulated"`
 }
 
 const eventSummaryCols = `id, project_id, webhook_id, dedup_key, type, status, signature,
-	content_type, payload_size, received_at, contract_status`
+	content_type, payload_size, received_at, contract_status, simulated`
 
 // listEvents is the Explorer's search: newest first, keyset-paginated.
 //
@@ -105,7 +107,7 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 	for rows.Next() {
 		var e eventSummary
 		if err := rows.Scan(&e.ID, &e.ProjectID, &e.WebhookID, &e.DedupKey, &e.Type, &e.Status, &e.Signature,
-			&e.ContentType, &e.PayloadSize, &e.ReceivedAt, &e.ContractStatus); err != nil {
+			&e.ContentType, &e.PayloadSize, &e.ReceivedAt, &e.ContractStatus, &e.Simulated); err != nil {
 			return err
 		}
 		out = append(out, e)
@@ -156,7 +158,7 @@ func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) error {
 	err = s.Pool.QueryRow(r.Context(), `SELECT `+eventSummaryCols+`, headers, payload, host(source_ip)
 		FROM events WHERE id = $1 AND org_id = $2`, id, orgID).
 		Scan(&e.ID, &e.ProjectID, &e.WebhookID, &e.DedupKey, &e.Type, &e.Status, &e.Signature,
-			&e.ContentType, &e.PayloadSize, &e.ReceivedAt, &e.ContractStatus, &headers, &payload, &e.SourceIP)
+			&e.ContentType, &e.PayloadSize, &e.ReceivedAt, &e.ContractStatus, &e.Simulated, &headers, &payload, &e.SourceIP)
 	if err != nil {
 		return notFoundIfNoRows(err)
 	}
@@ -365,4 +367,41 @@ func summarize(ds []deliveryView) string {
 		}
 	}
 	return state
+}
+
+// getRawEvent returns an event exactly as it arrived: the unmasked body and the
+// stored headers (which keep the provider's signature headers). The CLI forwards
+// it to a developer's local server, whose own signature check must still pass.
+// Admin only: the body is not masked.
+func (s *Server) getRawEvent(w http.ResponseWriter, r *http.Request) error {
+	orgID, _, _, err := s.orgAccess(r, auth.RoleAdmin)
+	if err != nil {
+		return err
+	}
+	id, err := pathID(r, "event")
+	if err != nil {
+		return err
+	}
+	var out struct {
+		ID          string            `json:"id"`
+		WebhookID   string            `json:"webhook_id"`
+		Type        string            `json:"type"`
+		Status      string            `json:"status"`
+		ContentType string            `json:"content_type"`
+		Headers     map[string]string `json:"headers"`
+		Body        []byte            `json:"body_base64"`
+		ReceivedAt  time.Time         `json:"received_at"`
+		Simulated   bool              `json:"simulated"`
+	}
+	var headers []byte
+	err = s.Pool.QueryRow(r.Context(), `
+		SELECT id, webhook_id, type, status, content_type, headers, payload, received_at, simulated
+		FROM events WHERE id = $1 AND org_id = $2`, id, orgID).
+		Scan(&out.ID, &out.WebhookID, &out.Type, &out.Status, &out.ContentType, &headers, &out.Body, &out.ReceivedAt, &out.Simulated)
+	if err != nil {
+		return notFoundIfNoRows(err)
+	}
+	_ = json.Unmarshal(headers, &out.Headers)
+	httpx.JSON(w, http.StatusOK, out)
+	return nil
 }

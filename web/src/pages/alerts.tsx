@@ -1,4 +1,4 @@
-import { BellIcon, MailIcon, PencilIcon, PlusIcon, SendIcon, HashIcon, Trash2Icon, WebhookIcon, type LucideIcon } from 'lucide-react'
+import { BellIcon, ExternalLinkIcon, MailIcon, PencilIcon, PlusIcon, SendIcon, HashIcon, TicketIcon, Trash2Icon, WebhookIcon, type LucideIcon } from 'lucide-react'
 import { useState, type SubmitEvent } from 'react'
 import { toast } from 'sonner'
 
@@ -49,6 +49,7 @@ const typeInfo: Record<AlertChannelType, { label: string; icon: LucideIcon }> = 
   slack: { label: 'Slack', icon: HashIcon },
   email: { label: 'Email', icon: MailIcon },
   webhook: { label: 'Webhook', icon: WebhookIcon },
+  jira: { label: 'Jira', icon: TicketIcon },
 }
 
 export function AlertsPage() {
@@ -88,7 +89,7 @@ export function AlertsPage() {
             )
           }
         >
-          Send alerts to a Slack channel, a teammate's email, or your own endpoint.
+          Send alerts to a Slack channel, a teammate's email, Jira, or your own endpoint.
           {!canManage && ' Ask an admin to add one.'}
         </EmptyState>
       ) : (
@@ -231,6 +232,9 @@ function ChannelForm({ channel, onClose, onSecret }: { channel: AlertChannel | '
   const [name, setName] = useState(isNew ? '' : channel.name)
   const [url, setUrl] = useState('')
   const [email, setEmail] = useState('')
+  const [jira, setJira] = useState({ site: '', email: '', api_token: '', project: '', issue_type: 'Task' })
+  const setJiraField = (k: keyof typeof jira) => (e: { target: { value: string } }) => setJira((j) => ({ ...j, [k]: e.target.value }))
+  const jiraReady = jira.site.trim() && jira.email.trim() && jira.api_token.trim() && jira.project.trim()
   const [events, setEvents] = useState<AlertKind[]>(isNew ? allKinds : channel.events)
   const [error, setError] = useState('')
   const pending = create.isPending || update.isPending
@@ -246,7 +250,7 @@ function ChannelForm({ channel, onClose, onSecret }: { channel: AlertChannel | '
           type,
           name: name.trim(),
           events,
-          ...(type === 'email' ? { email } : { url: url.trim() }),
+          ...(type === 'email' ? { email } : type === 'jira' ? { jira } : { url: url.trim() }),
         })
         onClose()
         // The secret dialog is confirmation enough; a toast would sit over its button on phones.
@@ -272,7 +276,7 @@ function ChannelForm({ channel, onClose, onSecret }: { channel: AlertChannel | '
       {isNew && (
         <div className="grid gap-2">
           <Label>Send to</Label>
-          <div className="grid grid-cols-3 gap-2" role="radiogroup">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup">
             {(Object.keys(typeInfo) as AlertChannelType[]).map((t) => {
               const Icon = typeInfo[t].icon
               return (
@@ -302,7 +306,7 @@ function ChannelForm({ channel, onClose, onSecret }: { channel: AlertChannel | '
           id="ac-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder={type === 'slack' ? '#payments-alerts' : type === 'email' ? 'On-call' : 'PagerDuty bridge'}
+          placeholder={type === 'slack' ? '#payments-alerts' : type === 'email' ? 'On-call' : type === 'jira' ? 'Ops Jira' : 'PagerDuty bridge'}
           required
           maxLength={100}
         />
@@ -338,6 +342,42 @@ function ChannelForm({ channel, onClose, onSecret }: { channel: AlertChannel | '
         </div>
       )}
 
+      {isNew && type === 'jira' && (
+        <div className="grid min-w-0 gap-3">
+          <p className="text-xs text-muted-foreground">
+            Each problem becomes one Jira issue (labelled <span className="font-mono">relaya</span>). If it happens again while the issue is open, Relaya
+            adds a comment; when it's fixed, Relaya comments and moves the issue to Done.
+          </p>
+          <div className="grid gap-2">
+            <Label htmlFor="ac-jira-site">Jira site</Label>
+            <Input id="ac-jira-site" type="url" value={jira.site} onChange={setJiraField('site')} placeholder="https://yourco.atlassian.net" required />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
+            <div className="grid min-w-0 gap-2">
+              <Label htmlFor="ac-jira-email">Atlassian account email</Label>
+              <Input id="ac-jira-email" type="email" value={jira.email} onChange={setJiraField('email')} placeholder="ops@yourco.com" required />
+            </div>
+            <div className="grid min-w-0 gap-2">
+              <Label htmlFor="ac-jira-token">API token</Label>
+              <Input id="ac-jira-token" type="password" autoComplete="off" value={jira.api_token} onChange={setJiraField('api_token')} required />
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
+            <div className="grid min-w-0 gap-2">
+              <Label htmlFor="ac-jira-project">Project key</Label>
+              <Input id="ac-jira-project" value={jira.project} onChange={setJiraField('project')} placeholder="OPS" className="font-mono uppercase" maxLength={20} required />
+            </div>
+            <div className="grid min-w-0 gap-2">
+              <Label htmlFor="ac-jira-type">Issue type</Label>
+              <Input id="ac-jira-type" value={jira.issue_type} onChange={setJiraField('issue_type')} placeholder="Task" maxLength={60} />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Create the token at id.atlassian.com → Security → API tokens. It's stored encrypted, and Relaya checks the settings with Jira when you save.
+          </p>
+        </div>
+      )}
+
       <fieldset className="grid gap-2">
         <legend className="mb-2 text-sm font-medium">Alerts</legend>
         {allKinds.map((k) => (
@@ -358,8 +398,11 @@ function ChannelForm({ channel, onClose, onSecret }: { channel: AlertChannel | '
 
       {error && <p className="break-words text-sm text-destructive">{error}</p>}
       <DialogFooter>
-        <Button type="submit" disabled={pending || events.length === 0 || !name.trim() || (isNew && type === 'email' && !email)}>
-          {pending ? 'Saving…' : isNew ? 'Add channel' : 'Save'}
+        <Button
+          type="submit"
+          disabled={pending || events.length === 0 || !name.trim() || (isNew && type === 'email' && !email) || (isNew && type === 'jira' && !jiraReady)}
+        >
+          {pending ? (type === 'jira' && isNew ? 'Checking with Jira…' : 'Saving…') : isNew ? 'Add channel' : 'Save'}
         </Button>
       </DialogFooter>
     </form>
@@ -415,6 +458,16 @@ function AlertLog() {
                         {kindInfo[a.kind]?.label ?? a.kind}
                         <span className="md:hidden"> · {a.channel_name}</span>
                       </div>
+                      {a.external_url && (
+                        <a
+                          href={a.external_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-0.5 inline-flex items-center gap-1 font-mono text-xs text-brand hover:underline"
+                        >
+                          {a.external_ref} <ExternalLinkIcon className="size-3" />
+                        </a>
+                      )}
                       {a.last_error && (
                         <div className="mt-0.5 line-clamp-2 break-words text-xs text-red-700 dark:text-red-400" title={a.last_error}>
                           {a.last_error}

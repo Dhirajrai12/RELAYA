@@ -115,14 +115,24 @@ Callers without access to an org get 404, not 403, so org IDs can't be probed.
 `standardwebhooks` ([Standard Webhooks](https://www.standardwebhooks.com/) and Svix: `webhook-*` or `svix-*` headers, `whsec_` HMAC or `whpk_` Ed25519 keys, 5-minute tolerance, dedup on the message ID),
 `cashfree` (base64 HMAC-SHA256 of timestamp + body with the PG secret key, 5-minute tolerance),
 `payu` (SHA-512 reverse hash in the body, keyed with the merchant salt; form or JSON),
-`phonepe` (`Authorization` = SHA-256 of `username:password`; proves the sender, not the body).
-Add one in `internal/provider`: implement `Verify`, `DedupKey`, `EventType` and register it.
+`phonepe` (`Authorization` = SHA-256 of `username:password`; proves the sender, not the body),
+`jira` (Jira Cloud system webhooks: `X-Hub-Signature: sha256=<hex HMAC-SHA256 of the body>` when a secret is set; dedup on `X-Atlassian-Webhook-Identifier`, which stays the same on retries; event type from `webhookEvent`, e.g. `jira:issue_created`).
+Add one in `internal/provider`: implement `Verify`, `DedupKey`, `EventType`, register it, and add its case to `Sign` (`sign.go`) and samples to `internal/simulate` (a test checks every sample signs and verifies).
 
 Ingest outcomes:
 
 - Valid signature, or no secret configured: stored as `received`, `200 {"id", "duplicate"}`.
 - Same dedup key again (per webhook, 30-day window): `200` with the original ID; nothing new stored.
 - Bad or missing signature: stored as `rejected` (evidence for the Explorer), `401`. Rejected events never claim a dedup key, so a forged request can't block the real one.
+
+### Event simulator
+
+Test an integration without a real payment: pick a sample event for the webhook's provider (Razorpay `payment.captured`, Stripe `payment_intent.succeeded`, Shopify `orders/create`, GitHub `push`, Jira `jira:issue_created`…), edit it if you like, and send it. Relaya signs it with the webhook's own secret exactly as the provider does (`provider.Sign`, the counterpart of `Verify`) and runs it through the same checks as a real delivery: signature, dedup, destinations and retries. Samples get fresh IDs on each load, so sending one twice unchanged shows duplicate handling where the provider dedupes on the body (Stripe). Simulated events are stored with `simulated = true` and a `Relaya-Simulated: true` header, labelled in the Explorer, and never learned or checked by contracts. A Standard Webhooks `whpk_` public key can't sign; the provider must send its own test.
+
+| Method & path | Min role |
+|---|---|
+| `GET /v1/orgs/{org}/webhooks/{webhook}/samples` → `{provider, signed, data: [{type, description, payload}]}` | member |
+| `POST /v1/orgs/{org}/webhooks/{webhook}/simulate` `{"event_type", "payload"}` (both optional) → `{id, duplicate, event_type, status, signature, deliveries}` | admin |
 
 ## Delivery (forwarding to your endpoints)
 
@@ -226,6 +236,7 @@ Channel types:
 - **Slack**: an Incoming Webhook URL (`https://hooks.slack.com/…`), stored encrypted.
 - **Email**: to a member of the org. Needs the `SMTP_*` settings; without them the channel can be created but sends fail.
 - **Webhook**: JSON `{type, title, body, link, org_id, alert_id, sent_at}`, signed like deliveries (`Relaya-Signature`) with a secret shown once. Same outbound URL rules as destinations.
+- **Jira**: a Jira Cloud site, the Atlassian account's email and API token (stored encrypted), a project key and an issue type (default `Task`); checked with Jira when saved. Each problem opens one issue labelled `relaya` with a link back to the dashboard. While it is open, the same problem again (same incident, destination, connection, sync or webhook) adds a comment; the recovery comments and moves the issue to the first "done" status its workflow allows. "Send test" checks the token, project and issue type without creating an issue. The alert log shows each alert's issue key and link.
 
 Alerts are queued in the same transaction as the change that caused them and sent by the worker (4 attempts: now, +1m, +5m, +30m).
 
@@ -233,7 +244,7 @@ Alerts are queued in the same transaction as the change that caused them and sen
 |---|---|
 | `GET /v1/orgs/{org}/alert-settings` (kinds, whether email is configured) | member |
 | `GET /v1/orgs/{org}/alert-channels` (with sent/failed counts for 7 days) | member |
-| `POST /v1/orgs/{org}/alert-channels` `{"type", "name", "url" or "email", "events"}` | admin |
+| `POST /v1/orgs/{org}/alert-channels` `{"type", "name", "url" or "email" or "jira": {"site", "email", "api_token", "project", "issue_type"}, "events"}` | admin |
 | `PATCH …/alert-channels/{channel}` `{"name", "events", "enabled"}`, `DELETE …` | admin |
 | `POST …/alert-channels/{channel}/test` (sends now, returns `{ok, error}`) | admin |
 | `GET /v1/orgs/{org}/alerts` (last 100) | member |
@@ -242,7 +253,7 @@ Alerts are queued in the same transaction as the change that caused them and sen
 
 Your users connect their accounts at other apps; Relaya runs the sign-in, stores the tokens encrypted (org data key) and keeps them fresh.
 
-Providers (`internal/connect/catalog.go`): `zoho` (OAuth2; follows the user's data centre from the callback's `accounts-server`, Zoho hosts only), `hubspot` (OAuth2), `google` (OAuth2 + PKCE, offline access), `shiprocket` (API-user login; the token is renewed by logging in again before its 10 days run out).
+Providers (`internal/connect/catalog.go`): `zoho` (OAuth2; follows the user's data centre from the callback's `accounts-server`, Zoho hosts only), `hubspot` (OAuth2), `google` (OAuth2 + PKCE, offline access), `jira` (Atlassian OAuth 2.0 3LO with `offline_access`; after connecting, Relaya reads the granted sites from `accessible-resources` and calls the first Jira one through `https://api.atlassian.com/ex/jira/<cloud id>`, stored as `api_base` with `site_url`, and any other sites in `sites`; refresh tokens rotate and each new one is kept), `shiprocket` (API-user login; the token is renewed by logging in again before its 10 days run out).
 
 Flow:
 1. An admin adds an **integration**: the provider plus the org's own OAuth client (Zoho/HubSpot/Google), registered with the redirect URI `CONNECT_REDIRECT_URI` (shown in the dashboard).
@@ -282,6 +293,7 @@ A sync reads a connection's data on a schedule (every 5 minutes to once a day) a
 | `zoho.crm_records` | any CRM module (v2 Get Records, `If-Modified-Since`, by `Modified_Time`) | incremental |
 | `google.sheet_rows` | a sheet or range; the first row is the column names; rows keyed by row number or a key column | full look each run (10,000 rows) |
 | `shiprocket.orders` | the latest 100-1,000 orders | full look each run |
+| `jira.issues` | issues, optionally some `projects` and an extra `jql` filter, with chosen `fields` (JQL search, `/rest/api/3/search/jql`) | incremental, by `updated` in the user's time zone (to the minute) |
 
 - Each record's content hash is kept (`sync_records`); only a new ID or a different hash makes an event (`record_id`, `change`, `record`, `end_user_id`, `sync_id`). Deleted records aren't reported yet.
 - The first run only remembers what exists, unless `emit_existing` is set. The baseline counts as done only once a run reaches the end.

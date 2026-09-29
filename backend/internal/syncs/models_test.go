@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // canned answers calls with a fixed status and body, and records the calls.
@@ -163,5 +165,83 @@ func TestCanonicalHashIgnoresKeyOrder(t *testing.T) {
 	b := canonical([]byte(`{"a":{"x":1.50,"y":2},"b":1}`))
 	if string(a) != string(b) || !strings.Contains(string(a), "1.50") {
 		t.Fatalf("%s vs %s", a, b)
+	}
+}
+
+// routed answers calls by path, and records them.
+type routed struct {
+	answers map[string]string
+	calls   []call
+}
+
+func (r *routed) Call(_ context.Context, method, base, path string, query url.Values, body any, header map[string]string) (int, []byte, error) {
+	r.calls = append(r.calls, call{method, base, path, query, body, header})
+	if b, ok := r.answers[path]; ok {
+		return 200, []byte(b), nil
+	}
+	return 404, []byte(`{"errorMessages":["not found"]}`), nil
+}
+
+func TestJiraIssues(t *testing.T) {
+	m := mustModel(t, "jira.issues")
+	cfg, err := m.Validate(map[string]string{"projects": "ops, support", "jql": "issuetype = Bug"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &routed{answers: map[string]string{
+		"/rest/api/3/myself": `{"timeZone":"Asia/Kolkata"}`,
+		"/rest/api/3/search/jql": `{"issues":[
+			{"id":"10001","key":"OPS-1","fields":{"summary":"Checkout down","updated":"2026-09-28T10:15:30.123+0530"}},
+			{"id":"10002","key":"OPS-2","fields":{"summary":"Slow","updated":"2026-09-28T10:20:00.000+0530"}}],
+			"nextPageToken":"tok2","isLast":false}`,
+	}}
+
+	// First run: no time filter, the whole (filtered) list, page by page.
+	p, err := m.Fetch(context.Background(), f, cfg, "")
+	if err != nil || len(p.Records) != 2 || p.Records[0].ID != "10001" || !p.More || p.Cursor != "|tok2" {
+		t.Fatalf("page 1: %+v %v", p, err)
+	}
+	q := f.calls[0].query
+	if f.calls[0].path != "/rest/api/3/search/jql" || q.Get("jql") != "project in (OPS, SUPPORT) AND (issuetype = Bug) ORDER BY updated ASC, key ASC" ||
+		q.Get("maxResults") != "100" || !strings.Contains(q.Get("fields"), "summary") {
+		t.Fatalf("request 1: %s %v", f.calls[0].path, q)
+	}
+	var rec map[string]any
+	_ = json.Unmarshal(p.Records[0].Data, &rec)
+	if rec["key"] != "OPS-1" || rec["fields"].(map[string]any)["summary"] != "Checkout down" {
+		t.Fatalf("record: %v", rec)
+	}
+
+	// Last page: the cursor is the newest update seen.
+	f.answers["/rest/api/3/search/jql"] = `{"issues":[{"id":"10003","key":"SUPPORT-9","fields":{"updated":"2026-09-28T10:25:00.000+0530"}}],"isLast":true}`
+	p, err = m.Fetch(context.Background(), f, cfg, p.Cursor)
+	want := time.Date(2026, 9, 28, 4, 55, 0, 0, time.UTC).UnixMilli() // 10:25 IST
+	if err != nil || p.More || p.Cursor != strconv.FormatInt(want, 10) || f.calls[1].query.Get("nextPageToken") != "tok2" {
+		t.Fatalf("page 2: %+v %v", p, err)
+	}
+
+	// Next run: from that time, written in the user's time zone to the minute.
+	f.calls = nil
+	f.answers["/rest/api/3/search/jql"] = `{"issues":[],"isLast":true}`
+	p, err = m.Fetch(context.Background(), f, cfg, p.Cursor)
+	if err != nil || len(f.calls) != 2 || f.calls[0].path != "/rest/api/3/myself" {
+		t.Fatalf("next run: %+v %v %v", p, err, f.calls)
+	}
+	if jql := f.calls[1].query.Get("jql"); !strings.Contains(jql, `updated >= "2026-09-28 10:25"`) {
+		t.Fatalf("jql: %s", jql)
+	}
+	if p.Cursor != strconv.FormatInt(want, 10) {
+		t.Fatalf("nothing new must keep the cursor: %q", p.Cursor)
+	}
+
+	// Settings are checked.
+	for _, bad := range []map[string]string{{"projects": "ops; drop"}, {"jql": "project = X ORDER BY created"}, {"fields": "summary, bad field"}} {
+		c, _ := m.Validate(bad)
+		if _, err := m.Fetch(context.Background(), &routed{answers: map[string]string{}}, c, ""); err == nil {
+			t.Errorf("accepted %v", bad)
+		}
+	}
+	if m.EventType(cfg, "created") != "jira.issue.created" {
+		t.Fatal(m.EventType(cfg, "created"))
 	}
 }

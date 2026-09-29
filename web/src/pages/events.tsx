@@ -189,7 +189,10 @@ export function EventsPage() {
                     data-state={selected === e.id ? 'selected' : undefined}
                     onClick={() => setFilter('event', e.id)}
                   >
-                    <TableCell className="font-mono text-xs">{e.type || <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {e.type || <span className="text-muted-foreground">—</span>}
+                      {e.simulated && <SimulatedTag />}
+                    </TableCell>
                     <TableCell className="max-w-40 truncate">{webhookName(e.webhook_id)}</TableCell>
                     <TableCell>
                       <StatusBadge status={e.status} />
@@ -227,7 +230,10 @@ function EventCard({ e, webhookName, onOpen }: { e: EventSummary; webhookName: (
     <li>
       <button type="button" onClick={onOpen} className="w-full px-3 py-3 text-left active:bg-muted">
         <div className="flex items-center justify-between gap-3">
-          <span className="min-w-0 truncate font-mono text-xs font-medium">{e.type || '—'}</span>
+          <span className="min-w-0 truncate font-mono text-xs font-medium">
+            {e.type || '—'}
+            {e.simulated && <SimulatedTag />}
+          </span>
           <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(e.received_at)}</span>
         </div>
         <div className="mt-1.5 flex items-center gap-2 text-xs">
@@ -367,5 +373,14 @@ function EventBody({ e }: { e: EventDetail }) {
         </div>
       </section>
     </div>
+  )
+}
+
+/** Marks events sent with the event simulator. */
+function SimulatedTag() {
+  return (
+    <span className="ml-1.5 rounded border border-violet-500/30 bg-violet-500/10 px-1 py-px align-middle font-sans text-[10px] font-medium text-violet-700 dark:text-violet-300">
+      simulated
+    </span>
   )
 }

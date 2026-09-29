@@ -34,10 +34,13 @@ var orgRoutes = []struct {
 	{"GET", "/v1/orgs/{org}/webhooks/{webhook}", "member"},
 	{"PATCH", "/v1/orgs/{org}/webhooks/{webhook}", "admin"},
 	{"POST", "/v1/orgs/{org}/webhooks/{webhook}/rotate-url", "admin"},
+	{"GET", "/v1/orgs/{org}/webhooks/{webhook}/samples", "member"},
+	{"POST", "/v1/orgs/{org}/webhooks/{webhook}/simulate", "admin"}, // triggers real deliveries
 	{"DELETE", "/v1/orgs/{org}/webhooks/{webhook}", "admin"},
 	{"GET", "/v1/orgs/{org}/events", "member"},
 	{"GET", "/v1/orgs/{org}/events/stats", "member"},
 	{"GET", "/v1/orgs/{org}/events/{event}", "member"},
+	{"GET", "/v1/orgs/{org}/events/{event}/raw", "admin"}, // unmasked body
 	{"GET", "/v1/orgs/{org}/webhooks/{webhook}/destinations", "member"},
 	{"POST", "/v1/orgs/{org}/webhooks/{webhook}/destinations", "admin"},
 	{"PATCH", "/v1/orgs/{org}/destinations/{destination}", "admin"},
