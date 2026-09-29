@@ -87,6 +87,7 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	setAuthCookie(w, out.Token, out.ExpiresAt, r)
 	httpx.JSON(w, http.StatusCreated, out)
 	return nil
 }
@@ -147,18 +148,21 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	if out.Token, out.ExpiresAt, err = s.Auth.CreateSession(r.Context(), s.Pool, u.ID); err != nil {
 		return err
 	}
+	setAuthCookie(w, out.Token, out.ExpiresAt, r)
 	httpx.JSON(w, http.StatusOK, out)
 	return nil
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) error {
-	token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	if !strings.HasPrefix(token, auth.SessionPrefix) {
-		return httpx.BadRequest("logout requires a session token")
+	// Try to get token from cookie first (new way), then from Authorization header (legacy)
+	token := getAuthToken(r)
+	if token == "" {
+		return httpx.BadRequest("logout requires authentication")
 	}
 	if err := s.Auth.DeleteSession(r.Context(), token); err != nil {
 		return err
 	}
+	clearAuthCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -182,4 +186,40 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) error {
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"user": u, "orgs": orgs})
 	return nil
+}
+
+// setAuthCookie sets an httpOnly session cookie. Secure flag is set when running over HTTPS.
+func setAuthCookie(w http.ResponseWriter, token string, expiresAt time.Time, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "relaya_session",
+		Value:    token,
+		Path:     "/",
+		Expires:  expiresAt,
+		HttpOnly: true,
+		Secure:   r.TLS != nil, // true over HTTPS, false in dev (http://localhost)
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// clearAuthCookie removes the session cookie.
+func clearAuthCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "relaya_session",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// getAuthToken retrieves the session token from the cookie (preferred) or Authorization header (fallback).
+func getAuthToken(r *http.Request) string {
+	// Try cookie first (new way)
+	if cookie, err := r.Cookie("relaya_session"); err == nil {
+		return cookie.Value
+	}
+	// Fallback to Authorization header (legacy/API clients)
+	return strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 }

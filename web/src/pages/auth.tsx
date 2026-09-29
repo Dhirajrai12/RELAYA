@@ -46,7 +46,8 @@ function useSubmit(path: string, toBody: (f: FormData) => unknown) {
     setError('')
     try {
       const s = await post<Session>(path, toBody(new FormData(e.currentTarget)))
-      signIn(s.token, s.user)
+      // Token is in httpOnly cookie, no need to store it. Just store the user.
+      signIn(s.user)
       navigate('/overview', { replace: true })
     } catch (err) {
       setError(errorMessage(err))

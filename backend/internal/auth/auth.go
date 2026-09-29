@@ -91,13 +91,20 @@ type Service struct {
 	SessionTTL time.Duration
 }
 
-// Middleware requires a valid bearer token and stores the Principal in the context.
+// Middleware requires a valid bearer token (from cookie or Authorization header) and stores the Principal in the context.
 func (s *Service) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || token == "" {
-			httpx.WriteError(w, r, httpx.ErrUnauthorized)
-			return
+		// Try cookie first (new way), then Authorization header (for API clients)
+		var token string
+		if cookie, err := r.Cookie("relaya_session"); err == nil {
+			token = cookie.Value
+		} else {
+			var ok bool
+			token, ok = strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if !ok || token == "" {
+				httpx.WriteError(w, r, httpx.ErrUnauthorized)
+				return
+			}
 		}
 		p, err := s.authenticate(r.Context(), strings.TrimSpace(token))
 		if err != nil {

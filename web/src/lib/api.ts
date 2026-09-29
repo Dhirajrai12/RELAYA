@@ -15,22 +15,23 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const { token, signOut } = useAuth.getState()
+  const { signOut } = useAuth.getState()
   const headers: Record<string, string> = {}
-  if (token) headers.Authorization = `Bearer ${token}`
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
+  // Session token is in an httpOnly cookie, automatically sent by the browser.
   const res = await fetch(BASE + path, {
     method,
     headers,
+    credentials: 'include', // ensure cookies are sent
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 
   if (res.status === 204) return undefined as T
   const data = await res.json().catch(() => null)
   if (!res.ok) {
-    // An expired or revoked session anywhere sends the user back to login.
-    if (res.status === 401 && token) signOut()
+    // An expired or revoked session sends the user back to login.
+    if (res.status === 401) signOut()
     const err = data?.error
     throw new ApiError(res.status, err?.code ?? 'error', err?.message ?? `Request failed (${res.status})`)
   }
