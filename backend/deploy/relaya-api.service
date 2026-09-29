@@ -1,0 +1,34 @@
+[Unit]
+Description=Relaya API Server
+After=network.target postgres.service
+Wants=postgres.service
+
+[Service]
+Type=simple
+User=relaya
+WorkingDirectory=/opt/relaya/prod
+ExecStart=/opt/relaya/prod/bin/api
+Restart=on-failure
+RestartSec=10
+
+# Environment variables
+EnvironmentFile=/opt/relaya/prod/.env
+Environment="LOG_LEVEL=info"
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=32768
+
+# Security
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=relaya-api
+
+[Install]
+WantedBy=multi-user.target
