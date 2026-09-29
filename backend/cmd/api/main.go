@@ -92,11 +92,11 @@ func main() {
 }
 
 // streamOrigins allows the dashboard origins (e.g. the Vite dev server) plus the
-// public host. Behind IIS/ARR the Host header is the backend address, so the
-// public host must be listed explicitly.
+// public hosts: ingest and the dashboard, which can be a different domain. Behind
+// IIS/ARR the Host header is the backend address, so they must be listed explicitly.
 func streamOrigins(cfg config.Config) []string {
 	var out []string
-	for _, o := range append(cfg.AllowedOrigins, cfg.IngestBaseURL) {
+	for _, o := range append(append([]string{}, cfg.AllowedOrigins...), cfg.IngestBaseURL, cfg.DashboardURL) {
 		if u, err := url.Parse(o); err == nil && u.Host != "" {
 			out = append(out, u.Host)
 		}

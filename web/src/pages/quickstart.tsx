@@ -60,7 +60,7 @@ export function QuickstartPage() {
     }
   }
   const origin = location.origin
-  const hosted = origin === 'https://server.aegonassett.com'
+  const hosted = origin === 'https://server.aegonassett.com' || origin === 'https://relaya.sbs'
   const base = hosted ? '' : origin + '/api'
   const info = LANGS.find((l) => l.key === lang)!
 

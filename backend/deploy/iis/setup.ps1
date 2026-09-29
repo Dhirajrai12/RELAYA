@@ -88,7 +88,23 @@ if (Test-Path (Join-Path $WebDist 'index.html')) {
 } else {
   Write-Host "    no dashboard build at $WebDist (run npm run build in web\) - skipped" -ForegroundColor Yellow
 }
-(Get-Content (Join-Path $PSScriptRoot 'web.config') -Raw) -replace '__HOST__', $HostName | Set-Content (Join-Path $site 'web.config') -Encoding UTF8 -NoNewline
+# The dashboard can live on its own domain (DASHBOARD_URL in .env); ingest and the API stay on $HostName.
+$dashHost = $HostName
+$dashLine = Get-Content $envFile | Where-Object { $_ -match '^\s*DASHBOARD_URL\s*=' } | Select-Object -Last 1
+if ($dashLine) {
+  $u = ($dashLine -replace '^\s*DASHBOARD_URL\s*=\s*', '').Trim().Trim('"', "'")
+  try { $dashHost = ([Uri]$u).Host } catch { throw "DASHBOARD_URL in $envFile is not a URL: $u" }
+}
+$config = Get-Content (Join-Path $PSScriptRoot 'web.config') -Raw
+if ($dashHost -eq $HostName) {
+  $config = $config -replace '(?s)\s*<!--DASHBOARD-MOVED.*?<!--/DASHBOARD-MOVED-->', ''
+  $wss = "wss://$HostName"
+} else {
+  $config = $config.Replace('__DASHBOARD_HOST__', $dashHost).Replace('__HOST_RE__', [regex]::Escape($HostName))
+  $wss = "wss://$HostName wss://$dashHost"
+  Write-Host "    dashboard at https://$dashHost (pages on $HostName redirect there)"
+}
+$config.Replace('wss://__HOST__', $wss) | Set-Content (Join-Path $site 'web.config') -Encoding UTF8 -NoNewline
 
 Step 'Run migrations'
 & (Join-Path $bin 'migrate.exe')
@@ -140,9 +156,19 @@ Set-ItemProperty "IIS:\AppPools\$SiteName" managedRuntimeVersion ''   # No Manag
 if (-not (Get-Website $SiteName -ErrorAction SilentlyContinue)) {
   New-Website -Name $SiteName -PhysicalPath $site -ApplicationPool $SiteName -HostHeader $HostName -Port 80 | Out-Null
 }
-if ($CertThumbprint -and -not (Get-WebBinding -Name $SiteName -Protocol https)) {
+if ($CertThumbprint -and -not (Get-WebBinding -Name $SiteName -Protocol https -HostHeader $HostName)) {
   New-WebBinding -Name $SiteName -Protocol https -Port 443 -HostHeader $HostName -SslFlags 1
-  (Get-WebBinding -Name $SiteName -Protocol https).AddSslCertificate($CertThumbprint, $CertStore)
+  (Get-WebBinding -Name $SiteName -Protocol https -HostHeader $HostName).AddSslCertificate($CertThumbprint, $CertStore)
+}
+if ($dashHost -ne $HostName) {
+  # Plain HTTP for the dashboard domain (and www), so its certificate can be issued and renewed
+  # (win-acme adds the https bindings).
+  foreach ($h in $dashHost, "www.$dashHost") {
+    if (-not (Get-WebBinding -Name $SiteName -Protocol http -Port 80 -HostHeader $h)) {
+      New-WebBinding -Name $SiteName -Protocol http -Port 80 -HostHeader $h
+      Write-Host "    added http binding for $h"
+    }
+  }
 }
 
 Step 'Compress static files on the first request'
@@ -165,6 +191,7 @@ $checks = @(
   @{ Name = 'ingest via IIS'; Url = 'http://127.0.0.1/healthz';     Host = $HostName },
   @{ Name = 'api via IIS';    Url = 'http://127.0.0.1/api/readyz';  Host = $HostName }
 )
+if ($dashHost -ne $HostName) { $checks += @{ Name = 'dashboard API'; Url = 'http://127.0.0.1/api/readyz'; Host = $dashHost } }
 foreach ($c in $checks) {
   # curl.exe ships with Server 2019+; Invoke-WebRequest in PS 5.1 cannot set the Host header.
   $curlArgs = @('-s', '-o', 'NUL', '-w', '%{http_code}', '--max-time', '5', $c.Url)
@@ -173,4 +200,4 @@ foreach ($c in $checks) {
   $color = if ($code -eq '200') { 'Green' } else { 'Red' }
   Write-Host ("    {0,-15} {1}" -f $c.Name, $code) -ForegroundColor $color
 }
-Write-Host "Done. Webhook URLs will look like https://$HostName/v1/in/<token>; API at https://$HostName/api/v1/..."
+Write-Host "Done. Webhook URLs will look like https://$HostName/v1/in/<token>; API at https://$HostName/api/v1/...; dashboard at https://$dashHost/"
