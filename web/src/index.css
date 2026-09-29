@@ -138,40 +138,40 @@
     @apply font-sans;
     }
 }
-/* ---- Relaya brand (from the logo: green #14b886, navy #0b1520) ---------------- */
+/* ---- Relaya brand (modern emerald & navy) ---- */
 :root {
-    --brand: #14b886;
-    --brand-foreground: #0b1520;
-    --primary: #0b1520;
-    --primary-foreground: #f4f6f0;
-    --ring: #14b886;
-    --sidebar-primary: #14b886;
+    --brand: #10b981;
+    --brand-foreground: #ffffff;
+    --primary: #065f46;
+    --primary-foreground: #f0fdf4;
+    --ring: #10b981;
+    --sidebar-primary: #10b981;
 
     /* Chart roles (validated with the dataviz palette validator, light surface). */
-    --viz-received: #2a78d6;
-    --viz-rejected: #d03b3b;
-    --viz-grid: #e1e0d9;
-    --viz-axis: #898781;
+    --viz-received: #3b82f6;
+    --viz-rejected: #ef4444;
+    --viz-grid: #f3f4f6;
+    --viz-axis: #6b7280;
 }
 
 .dark {
-    --background: #0d1117;
-    --card: #141a22;
-    --popover: #141a22;
-    --muted: #1b222c;
-    --accent: #1b222c;
-    --border: rgb(255 255 255 / 0.1);
-    --input: rgb(255 255 255 / 0.14);
-    --primary: #14b886;
-    --primary-foreground: #0b1520;
-    --ring: #14b886;
-    --sidebar: #10151c;
+    --background: #030712;
+    --card: #0f172a;
+    --popover: #0f172a;
+    --muted: #1e293b;
+    --accent: #1e293b;
+    --border: rgb(255 255 255 / 0.08);
+    --input: rgb(255 255 255 / 0.12);
+    --primary: #10b981;
+    --primary-foreground: #030712;
+    --ring: #10b981;
+    --sidebar: #0a0f1a;
 
-    /* Same hues stepped for the dark surface (validated separately). */
-    --viz-received: #3987e5;
-    --viz-rejected: #d03b3b;
-    --viz-grid: #2c2c2a;
-    --viz-axis: #898781;
+    /* Same hues stepped for the dark surface. */
+    --viz-received: #60a5fa;
+    --viz-rejected: #f87171;
+    --viz-grid: #1e293b;
+    --viz-axis: #64748b;
 }
 
 body {

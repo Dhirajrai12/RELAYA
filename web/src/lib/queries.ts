@@ -1019,7 +1019,7 @@ export function fetchOutboundEndpointSecret(orgId: string, app: string, id: stri
 }
 
 export const useCreatePortalLink = (app: string) =>
-  useOutboundMutation((orgId, _: void) =>
+  useOutboundMutation((orgId) =>
     post<{ url: string; expires_at: string }>(orgPath(orgId, `/outbound/apps/${encodeURIComponent(app)}/portal-link`)),
   )
 

@@ -90,15 +90,15 @@ export function DocsPage() {
             <Table
               head={['Header', 'Meaning']}
               rows={[
-                [<C>Relaya-Signature</C>, <>Proves the request came from Relaya (see below).</>],
-                [<C>Idempotency-Key</C>, <>The same on every retry and replay of one delivery. <b className="text-l-text">Dedupe on this.</b></>],
-                [<C>Relaya-Event-Id</C>, <>The event's ID, to look it up in the dashboard or API.</>],
-                [<C>Relaya-Delivery-Id</C>, <>This delivery's ID.</>],
-                [<C>Relaya-Attempt</C>, <>1 on the first try, then 2, 3… on retries.</>],
-                [<C>Relaya-Event-Type</C>, <>For example <C>payment.captured</C>, when Relaya could tell.</>],
-                [<C>Relaya-Replay</C>, <>Set when the request is part of an incident replay.</>],
-                [<C>Relaya-Repaired</C>, <>Set when repair rules changed the body (the provider's own signature headers are then left out).</>],
-                [<C>Relaya-Simulated</C>, <>Set on test events from the event simulator or <C>relaya trigger</C>.</>],
+                [<C key="sig">Relaya-Signature</C>, <>Proves the request came from Relaya (see below).</>],
+                [<C key="idem">Idempotency-Key</C>, <>The same on every retry and replay of one delivery. <b className="text-l-text">Dedupe on this.</b></>],
+                [<C key="eid">Relaya-Event-Id</C>, <>The event's ID, to look it up in the dashboard or API.</>],
+                [<C key="did">Relaya-Delivery-Id</C>, <>This delivery's ID.</>],
+                [<C key="att">Relaya-Attempt</C>, <>1 on the first try, then 2, 3… on retries.</>],
+                [<C key="etype">Relaya-Event-Type</C>, <>For example <C>payment.captured</C>, when Relaya could tell.</>],
+                [<C key="replay">Relaya-Replay</C>, <>Set when the request is part of an incident replay.</>],
+                [<C key="repair">Relaya-Repaired</C>, <>Set when repair rules changed the body (the provider's own signature headers are then left out).</>],
+                [<C key="sim">Relaya-Simulated</C>, <>Set on test events from the event simulator or <C>relaya trigger</C>.</>],
               ]}
             />
             <h3 className="mt-8 text-lg font-semibold text-l-text">The signature</h3>
