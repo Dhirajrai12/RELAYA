@@ -2,6 +2,7 @@ import { useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { create } from 'zustand'
 
+import { API_BASE } from './api'
 import { useAuth } from './auth'
 
 // Realtime: a WebSocket that tells us *what changed*; we then refetch just
@@ -114,9 +115,9 @@ export function useRealtime(orgId: string | null) {
 
     const connect = () => {
       setStatus('connecting')
-      const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-      const base = (import.meta.env.VITE_API_BASE ?? '/api/v1').replace(/\/$/, '')
-      ws = new WebSocket(`${proto}://${location.host}${base}/orgs/${orgId}/stream`)
+      const url = new URL(`${API_BASE}/orgs/${orgId}/stream`, location.href)
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      ws = new WebSocket(url)
       // The session cookie went with the upgrade request; an empty token tells the server to use it.
       ws.onopen = () => ws?.send(JSON.stringify({ type: 'auth' }))
       ws.onmessage = (ev) => {

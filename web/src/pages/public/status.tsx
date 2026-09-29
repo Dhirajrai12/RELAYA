@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2Icon, CircleHelpIcon, TriangleAlertIcon, XCircleIcon } from 'lucide-react'
 
+import { API_BASE } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PublicPage } from './layout'
 
@@ -36,7 +37,7 @@ export function StatusPage() {
   const { data, error, isPending } = useQuery({
     queryKey: ['public-status'],
     queryFn: async () => {
-      const res = await fetch('/api/v1/status')
+      const res = await fetch(`${API_BASE}/status`)
       if (!res.ok) throw new Error(`Status is unavailable right now (HTTP ${res.status}).`)
       return (await res.json()) as StatusPageData
     },

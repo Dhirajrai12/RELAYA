@@ -1,7 +1,13 @@
 import { useAuth } from './auth'
 
-// Same origin in dev (Vite proxy) and in production (IIS serves both).
-const BASE = import.meta.env.VITE_API_BASE ?? '/api/v1'
+// Where the dashboard calls the API. The hosted dashboard (relaya.sbs) calls the API's own
+// domain, sending its session cookie cross-origin (the API allows it by CORS; both are the same
+// site, so the SameSite cookie goes along). Elsewhere (dev, other installs) the same origin
+// serves it under /api.
+export const API_BASE = (
+  import.meta.env.VITE_API_BASE ?? (location.origin === 'https://relaya.sbs' ? 'https://api.relaya.sbs/v1' : '/api/v1')
+).replace(/\/$/, '')
+const BASE = API_BASE
 
 // The address customers call from their own code (SDKs, curl), without /v1. On the hosted
 // dashboard that's the API's own domain; elsewhere the dashboard's origin serves it under /api.

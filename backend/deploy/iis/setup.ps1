@@ -116,6 +116,8 @@ if ($dashHost -eq $HostName) {
   $wss = "wss://$HostName wss://$dashHost"
   Write-Host "    dashboard at https://$dashHost (its pages on other hosts redirect there)"
 }
+# The dashboard calls the API's own domain (fetch and the live-update WebSocket).
+if ($apiHost -ne $dashHost) { $wss = (@($wss -split ' ') + "https://$apiHost" + "wss://$apiHost" | Select-Object -Unique) -join ' ' }
 $config.Replace('wss://__HOST__', $wss) | Set-Content (Join-Path $site 'web.config') -Encoding UTF8 -NoNewline
 
 Step 'Run migrations'

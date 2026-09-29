@@ -160,9 +160,19 @@ func CORS(origins []string) func(http.Handler) http.Handler {
 			if origin != "" && slices.Contains(origins, origin) {
 				h := w.Header()
 				h.Set("Access-Control-Allow-Origin", origin)
-				h.Set("Vary", "Origin")
-				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-				h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+				// The dashboard on its own domain signs in with the session cookie.
+				h.Set("Access-Control-Allow-Credentials", "true")
+				h.Add("Vary", "Origin")
+				// Trusted origins may send any header they ask for (the connection proxy
+				// forwards Relaya-Proxy-* headers).
+				allow := "Authorization, Content-Type"
+				if req := r.Header.Get("Access-Control-Request-Headers"); req != "" {
+					allow = req
+				}
+				h.Set("Access-Control-Allow-Headers", allow)
+				h.Add("Vary", "Access-Control-Request-Headers")
+				h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+				h.Set("Access-Control-Expose-Headers", "Relaya-Proxy-Attempts, Relaya-Proxy-Error, X-Request-Id")
 				h.Set("Access-Control-Max-Age", "600")
 			}
 			if r.Method == http.MethodOptions {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"time"
 
 	"relaya/internal/alerts"
@@ -84,11 +85,23 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", metrics.Handler(cfg.MetricsToken, reg, metrics.DBCollector(pool)))
 	mux.Handle("/", srv.Routes())
-	h := httpx.Chain(mux, httpx.Log, reg.Middleware, httpx.Recover, httpx.CORS(cfg.AllowedOrigins))
+	h := httpx.Chain(mux, httpx.Log, reg.Middleware, httpx.Recover, httpx.CORS(corsOrigins(cfg)))
 	if err := server.Run(ctx, "api", cfg.APIAddr, h); err != nil {
 		slog.Error("server", "err", err)
 		os.Exit(1)
 	}
+}
+
+// corsOrigins are CORS_ALLOWED_ORIGINS plus the dashboard, which calls the API's own
+// domain (e.g. https://relaya.sbs -> https://api.relaya.sbs) with its session cookie.
+func corsOrigins(cfg config.Config) []string {
+	out := append([]string{}, cfg.AllowedOrigins...)
+	if u, err := url.Parse(cfg.DashboardURL); err == nil && u.Scheme != "" && u.Host != "" {
+		if o := u.Scheme + "://" + u.Host; !slices.Contains(out, o) {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // streamOrigins allows the dashboard origins (e.g. the Vite dev server) plus the

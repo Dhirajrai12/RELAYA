@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ApiError, errorMessage } from '@/lib/api'
+import { API_BASE, ApiError, errorMessage } from '@/lib/api'
 import { dateTime, timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { EndpointTestResult, OutboundEndpoint, PortalDelivery, PortalInfo } from '@/lib/types'
@@ -30,7 +30,7 @@ function portalToken() {
 }
 
 async function portalApi<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch('/api/v1/portal' + path, {
+  const res = await fetch(`${API_BASE}/portal${path}`, {
     method,
     headers: { Authorization: `Bearer ${portalToken()}`, ...(body !== undefined && { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),

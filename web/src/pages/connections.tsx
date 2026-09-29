@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { errorMessage, PUBLIC_API } from '@/lib/api'
+import { API_BASE, errorMessage, PUBLIC_API } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { dateTime, timeAgo } from '@/lib/format'
 import {
@@ -662,14 +662,15 @@ function TryCallForm({ c }: { c: Connection }) {
     setResult(null)
     const started = performance.now()
     try {
-      // Signed in by the session cookie, which the browser sends with this same-origin call.
+      // Signed in by the session cookie (credentials: 'include', since the API can be on its own domain).
       const headers: Record<string, string> = { Accept: 'application/json' }
       if (base.trim()) headers['Relaya-Proxy-Base-Url'] = base.trim()
       const send = hasBody && body.trim() !== ''
       if (send) headers['Content-Type'] = 'application/json'
-      const res = await fetch(`/api/v1/orgs/${orgId}/connections/${c.id}/proxy/${path.trim().replace(/^\/+/, '')}`, {
+      const res = await fetch(`${API_BASE}/orgs/${orgId}/connections/${c.id}/proxy/${path.trim().replace(/^\/+/, '')}`, {
         method,
         headers,
+        credentials: 'include',
         body: send ? body : undefined,
       })
       let text = await res.text()
