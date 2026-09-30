@@ -1,7 +1,10 @@
 name: backend
 
+# Checks pull requests and branches. Pushes to main are tested by deploy.yml, which
+# runs these same checks before it publishes, so they don't run twice.
 on:
   push:
+    branches-ignore: [main]
     paths: ["backend/**", ".github/workflows/backend.yml"]
   pull_request:
     paths: ["backend/**", ".github/workflows/backend.yml"]

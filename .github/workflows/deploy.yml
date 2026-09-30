@@ -47,15 +47,17 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+      # The same checks as backend.yml and web.yml, which skip main so nothing runs twice.
       - name: Backend tests (with the database)
         working-directory: backend
         run: |
           test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
           go vet ./...
-          go test ./...
-      - name: Dashboard type check and build
+          go test -race ./...
+      # The build itself happens once, in the package job.
+      - name: Dashboard type check and lint
         working-directory: web
-        run: npm ci && npx tsc -b && npm run build
+        run: npm ci && npx tsc -b && npm run lint
 
   package:
     needs: test
