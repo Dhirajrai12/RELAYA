@@ -71,47 +71,61 @@ export function TypedCode({
     if (done) doneRef.current?.()
   }, [done])
 
-  // Walk the lines, spending the character budget (each newline costs one).
+  // Walk the lines, spending the character budget (each newline costs one). Text not
+  // typed yet is laid out but invisible, so long lines wrap in their final place and the
+  // window has its full height from the start: typing never moves the page.
   // The caret sits on the first line that isn't fully typed yet.
   let budget = shown
   let caretPlaced = false
   const rendered = lines.map((line, li) => {
-    if (budget < 0) return null // not reached yet
     const len = lineLength(line)
     const parts: ReactNode[] = []
-    let left = budget
-    for (let ti = 0; ti < line.length && left > 0; ti++) {
+    let left = Math.max(budget, 0)
+    for (let ti = 0; ti < line.length; ti++) {
       const [text, kind = 'p'] = line[ti]
-      parts.push(
-        <span key={ti} className={tone[kind]}>
-          {text.slice(0, left)}
-        </span>,
-      )
-      left -= text.length
+      const typed = text.slice(0, left)
+      const rest = text.slice(typed.length)
+      if (typed) parts.push(<span key={`t${ti}`} className={tone[kind]}>{typed}</span>)
+      if (rest) parts.push(<span key={`r${ti}`} className="invisible">{rest}</span>)
+      left = Math.max(left - text.length, 0)
     }
-    const caret = !caretPlaced && budget <= len
-    if (caret) caretPlaced = true
+    const caret = !caretPlaced && budget >= 0 && budget <= len
+    if (caret) {
+      caretPlaced = true
+      // The caret goes right after the typed characters, before the invisible rest.
+      const at = parts.findIndex((p) => (p as { key?: string }).key?.startsWith('r'))
+      // Drawn out of flow from an empty inline marker: an inline-block caret would add a line
+      // break opportunity wherever it is, so wrapped lines would reflow as it moves.
+      const mark = !done && (
+        <span key="caret" className="relative">
+          <span className="l-caret absolute left-px top-[0.2em] h-[1.1em] w-[7px] bg-[#3ee0a8]" />
+        </span>
+      )
+      if (at === -1) parts.push(mark)
+      else parts.splice(at, 0, mark)
+    }
     budget -= len + 1
     return (
-      <div key={li} className="min-h-[1.6em] whitespace-pre">
+      <div key={li} className="min-h-[1.6em] whitespace-pre-wrap [overflow-wrap:anywhere]">
         {parts}
-        {caret && !done && <span className="l-caret -mb-0.5 ml-px inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-[#3ee0a8]" />}
       </div>
     )
   })
 
-  // Code and output scroll sideways together inside the window, so a long line never
-  // widens the window (which pushed it past the screen on phones and made the hero jump).
+  // Long lines wrap inside the window instead of scrolling sideways. The output is laid
+  // out from the start too (invisible), and remounted when typing ends so it animates in.
   return (
-    <div className="min-w-0 overflow-x-auto font-mono text-[12.5px] leading-[1.6] sm:text-[13px]">
-      <div className="w-max min-w-full">
-        {rendered}
-        {done && output && (
-          <div className="mt-3 border-t border-white/10 pt-3 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1">
-            {output}
-          </div>
-        )}
-      </div>
+    <div className="min-w-0 font-mono text-[12.5px] leading-[1.6] sm:text-[13px]">
+      {rendered}
+      {output && (
+        <div
+          key={done ? 'shown' : 'hidden'}
+          className={cn('mt-3 border-t border-white/10 pt-3', done ? 'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1' : 'invisible')}
+          aria-hidden={!done}
+        >
+          {output}
+        </div>
+      )}
     </div>
   )
 }
@@ -120,7 +134,7 @@ export function TypedCode({
 export function OutLine({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
   return (
     <div
-      className={cn('whitespace-pre font-mono text-[12.5px] leading-[1.6] motion-safe:animate-in motion-safe:fade-in motion-safe:fill-mode-both sm:text-[13px]', className)}
+      className={cn('whitespace-pre-wrap font-mono text-[12.5px] leading-[1.6] [overflow-wrap:anywhere] motion-safe:animate-in motion-safe:fade-in motion-safe:fill-mode-both sm:text-[13px]', className)}
       style={{ animationDelay: `${delay}ms` }}
     >
       {children}
@@ -154,9 +168,8 @@ export function CodeDemo() {
     return () => io.disconnect()
   }, [])
 
-  // Incident tab has no typing: start its countdown once shown.
+  // Incident tab has no typing: it starts its countdown once shown.
   const tab = tabs[active]
-  const typed = tab.id !== 'incident'
 
   useEffect(() => {
     if (!holding || !autoplay || !visible) return
@@ -191,11 +204,12 @@ export function CodeDemo() {
               aria-selected={i === active}
               onClick={() => select(i)}
               className={cn(
-                'relative flex shrink-0 items-center gap-1.5 border-r border-white/5 px-3.5 py-2.5 font-mono text-xs transition-colors',
+                'relative flex shrink-0 items-center gap-1.5 border-r border-white/5 px-2.5 py-2.5 font-mono text-xs transition-colors sm:px-3.5',
                 i === active ? 'bg-[#0d1722] text-white' : 'text-slate-500 hover:text-slate-300',
               )}
             >
-              <t.icon className={cn('size-3.5', i === active ? 'text-[#3ee0a8]' : '')} />
+              {/* Icons from tablet width up, so all tabs fit a phone without scrolling. */}
+              <t.icon className={cn('hidden size-3.5 sm:block', i === active ? 'text-[#3ee0a8]' : '')} />
               {t.label}
               {i === active && (
                 <span className="absolute inset-x-0 bottom-0 h-0.5 bg-white/5">
@@ -216,25 +230,36 @@ export function CodeDemo() {
               setHolding(true)
             }}
             className="shrink-0 px-3 text-[11px] text-slate-500 transition hover:text-[#3ee0a8]"
+            aria-label="Resume autoplay"
           >
-            ▶ autoplay
+            ▶<span className="hidden sm:inline"> autoplay</span>
           </button>
         )}
       </div>
 
-      {/* body: fixed height so tabs don't make the page jump */}
-      <div className="h-[340px] min-w-0 overflow-hidden p-4 sm:h-[330px] sm:p-5" role="tabpanel">
-        {typed ? (
-          <TypedCode
-            key={active}
-            lines={tab.id === 'deliver' ? deliver : events}
-            start={visible}
-            onDone={() => setHolding(true)}
-            output={tab.id === 'deliver' ? <DeliverOutput /> : <EventsOutput />}
-          />
-        ) : (
-          <IncidentTab key={active} onShown={() => setHolding(true)} />
-        )}
+      {/* body: every tab is laid out in the same grid cell (the inactive ones invisible), so
+          the box is as tall as the tallest tab at any width and switching tabs never moves the page */}
+      <div className="grid min-w-0 p-4 sm:p-5" role="tabpanel">
+        {tabs.map((t, i) => {
+          const isActive = i === active
+          const body =
+            t.id === 'incident' ? (
+              isActive ? <IncidentTab onShown={() => setHolding(true)} /> : <IncidentCard bare />
+            ) : (
+              <TypedCode
+                lines={t.id === 'deliver' ? deliver : events}
+                start={isActive && visible}
+                onDone={isActive ? () => setHolding(true) : undefined}
+                output={t.id === 'deliver' ? <DeliverOutput /> : <EventsOutput />}
+              />
+            )
+          return (
+            // The active tab remounts each time it's shown, so it types again.
+            <div key={isActive ? `active-${active}` : t.id} className={cn('min-w-0 [grid-area:1/1]', !isActive && 'invisible')} aria-hidden={!isActive}>
+              {body}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -266,16 +291,26 @@ function EventsOutput() {
     ['payment.captured', 'invalid', '09:41:07'],
     ['refund.processed', 'missing', '09:12:55'],
   ]
+  // A box-drawn table can't wrap, so phones get plain rows.
   return (
     <>
-      <OutLine className="text-slate-500">┌──────────────────┬───────────┬──────────┐</OutLine>
-      {rows.map(([type, sig, at], i) => (
-        <OutLine key={type} delay={200 + i * 220} className="text-slate-300">
-          <span className="text-slate-500">│</span> {type.padEnd(16)} <span className="text-slate-500">│</span>{' '}
-          <span className="text-[#ff8a8a]">{sig.padEnd(9)}</span> <span className="text-slate-500">│</span> {at} <span className="text-slate-500">│</span>
-        </OutLine>
-      ))}
-      <OutLine delay={650} className="text-slate-500">└──────────────────┴───────────┴──────────┘</OutLine>
+      <div className="hidden sm:block">
+        <OutLine className="whitespace-pre text-slate-500">┌──────────────────┬───────────┬──────────┐</OutLine>
+        {rows.map(([type, sig, at], i) => (
+          <OutLine key={type} delay={200 + i * 220} className="whitespace-pre text-slate-300">
+            <span className="text-slate-500">│</span> {type.padEnd(16)} <span className="text-slate-500">│</span>{' '}
+            <span className="text-[#ff8a8a]">{sig.padEnd(9)}</span> <span className="text-slate-500">│</span> {at} <span className="text-slate-500">│</span>
+          </OutLine>
+        ))}
+        <OutLine delay={650} className="whitespace-pre text-slate-500">└──────────────────┴───────────┴──────────┘</OutLine>
+      </div>
+      <div className="sm:hidden">
+        {rows.map(([type, sig, at], i) => (
+          <OutLine key={type} delay={200 + i * 220} className="text-slate-300">
+            {type} <span className="text-[#ff8a8a]">{sig}</span> <span className="text-slate-500">{at}</span>
+          </OutLine>
+        ))}
+      </div>
     </>
   )
 }
