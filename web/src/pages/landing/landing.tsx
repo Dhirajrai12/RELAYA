@@ -1,5 +1,6 @@
 import {
   ArrowRightIcon,
+  BellIcon,
   CheckIcon,
   EyeOffIcon,
   FileSearchIcon,
@@ -12,7 +13,9 @@ import {
   NetworkIcon,
   RotateCcwIcon,
   ScrollTextIcon,
+  SendIcon,
   ShieldCheckIcon,
+  SirenIcon,
   UsersIcon,
   WebhookIcon,
   XIcon,
@@ -37,6 +40,7 @@ import { K, MiniChart, MiniEvents, N, S } from './visuals'
 // promise what the product can't do today.
 
 const TRIAL_DAYS = 7
+const CONTACT_EMAIL = 'info@relaya.sbs'
 
 // Hash links work from any page (they load the landing page, which scrolls to the section).
 const nav = [
@@ -254,7 +258,7 @@ function Hero() {
         aria-hidden="true"
       />
       <div className="pointer-events-none absolute -top-40 left-1/2 h-[500px] w-[900px] -translate-x-1/2 rounded-full bg-[#14b886]/15 blur-3xl" aria-hidden="true" />
-      <div className="relative mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[1.1fr_1fr]">
+      <div className="relative mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <div>
           <Reveal>
             <a
@@ -301,7 +305,7 @@ function Hero() {
               </TiltCard>
             </div>
           </div>
-          <p className="mt-4 text-center text-xs text-l-subtle">Illustrative. Impact, replay and verify in the incident view are coming soon.</p>
+          <p className="mt-4 text-center text-xs text-l-subtle">Illustrative example with sample data.</p>
         </Reveal>
       </div>
     </section>
@@ -309,26 +313,24 @@ function Hero() {
 }
 
 function WorksWith() {
-  const live = ['Razorpay', 'Cashfree', 'PayU', 'PhonePe', 'Stripe', 'Shopify', 'GitHub', 'Standard Webhooks (Svix)', 'Any HMAC webhook']
-  const next = ['Zoho', 'HubSpot', 'Tally', 'Shiprocket', 'Keka']
-  const items = [...live.map((name) => ({ name, live: true })), ...next.map((name) => ({ name, live: false }))]
+  const items = [
+    'Razorpay', 'Cashfree', 'PayU', 'PhonePe', 'Stripe', 'Shopify', 'GitHub', 'Slack', 'Twilio', 'HubSpot',
+    'Square', 'Segment', 'SendGrid', 'Notion', 'Jira', 'Standard Webhooks (Svix)', 'Any HMAC webhook',
+  ]
   return (
     <div className="border-y border-l-border bg-l-soft py-6">
       <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-4 sm:px-6 md:flex-row">
         <span className="shrink-0 text-sm text-l-subtle">Verifies signatures from</span>
         <div className="relative w-full overflow-hidden [contain:paint] [mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]">
           <div className="l-marquee flex w-max gap-3">
-            {[...items, ...items].map((p, i) => (
+            {[...items, ...items].map((name, i) => (
               <span
                 key={i}
                 aria-hidden={i >= items.length}
-                className={cn(
-                  'inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-sm font-medium transition hover:border-[#14b886]/50',
-                  p.live ? 'border-l-border bg-l-bg text-l-text' : 'border-dashed border-l-border text-l-subtle',
-                )}
+                className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-l-border bg-l-bg px-3.5 py-1.5 text-sm font-medium text-l-text transition hover:border-[#14b886]/50"
               >
-                {p.live ? <CheckIcon className="size-3.5 text-l-accent" /> : <span className="text-[11px]">on request</span>}
-                {p.name}
+                <CheckIcon className="size-3.5 text-l-accent" />
+                {name}
               </span>
             ))}
           </div>
@@ -343,15 +345,15 @@ function WorksWith() {
 function FourQuestions() {
   const qs: { icon: LucideIcon; q: string; a: string; live: boolean }[] = [
     { icon: FileSearchIcon, q: 'What broke?', a: 'Every delivery stored with headers, payload and signature result. Filter by provider, event type or status in seconds.', live: true },
-    { icon: UsersIcon, q: 'Who is affected?', a: 'Trace a failure from provider to connection to customer, with counts and the money involved.', live: false },
-    { icon: RotateCcwIcon, q: 'Is it safe to fix?', a: 'Dry-run first, idempotency keys on every replay, approval for bulk actions. Never retry blindly.', live: false },
-    { icon: ShieldCheckIcon, q: 'Did the fix work?', a: 'Read the result back from the destination and close the incident with proof, not hope.', live: false },
+    { icon: UsersIcon, q: 'Who is affected?', a: 'Every incident groups the events it touched: which webhook, which event type, how many and since when.', live: true },
+    { icon: RotateCcwIcon, q: 'Is it safe to fix?', a: 'Preview a replay before running it, dry-run repair rules on real events, and resend with the same Idempotency-Key.', live: true },
+    { icon: ShieldCheckIcon, q: 'Did the fix work?', a: "Follow each replayed delivery and your destination's response. Incidents close themselves once the problem stops.", live: true },
   ]
   return (
     <Section
       eyebrow="Why Relaya"
       title="Builders stop at “it's connected”. Monitoring stops at “there was an error”."
-      intro="During an integration incident your team asks four questions. Relaya is built to answer all of them, in order."
+      intro="During an integration incident your team asks four questions. Relaya answers all of them, in order."
     >
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {qs.map((x, i) => (
@@ -440,18 +442,21 @@ function Step({ n, title, body, children }: { n: string; title: string; body: st
 function Features() {
   const items: { icon: LucideIcon; title: string; body: string; live: boolean }[] = [
     { icon: WebhookIcon, title: 'Webhook gateway', body: 'A separate, tiny ingest path that verifies, stores and answers in milliseconds. The dashboard can go down; ingest keeps running.', live: true },
-    { icon: FingerprintIcon, title: 'Signature verification', body: 'Razorpay, Cashfree, PayU, PhonePe, Stripe, Shopify, GitHub, Standard Webhooks (Svix) and generic HMAC out of the box. Stripe timestamps checked against replay attacks.', live: true },
+    { icon: FingerprintIcon, title: 'Signature verification', body: 'Razorpay, Cashfree, PayU, PhonePe, Stripe, Shopify, GitHub, Slack, Twilio, HubSpot, Square, Segment, SendGrid, Notion, Jira, Standard Webhooks and generic HMAC. Timestamps checked against replay attacks.', live: true },
     { icon: FileSearchIcon, title: 'Event explorer', body: 'Search by provider event ID, type, status or signature. Full headers and payload, with secrets masked.', live: true },
-    { icon: GitCompareArrowsIcon, title: 'Integration contracts', body: 'Learns the shape of each payload and flags a renamed, removed or retyped field as a breaking change.', live: false },
-    { icon: NetworkIcon, title: 'Impact analysis', body: 'Provider → integration → connection → customer. Know exactly who a failure touches.', live: false },
-    { icon: RotateCcwIcon, title: 'Safe replay & verify', body: 'Retry with backoff, dry-run before replay, idempotency keys, and a read-back that proves the fix.', live: false },
+    { icon: GitCompareArrowsIcon, title: 'Integration contracts', body: 'Learns the shape of each payload and flags a renamed, removed or retyped field as a breaking change.', live: true },
+    { icon: SirenIcon, title: 'Incidents', body: 'Breaking changes open an incident with every affected event, grouped by webhook and event type, and close on their own once fixed.', live: true },
+    { icon: RotateCcwIcon, title: 'Safe replay & repair', body: 'Retries with backoff, a preview before every replay, repair rules you dry-run first, and the same Idempotency-Key on every resend.', live: true },
+    { icon: BellIcon, title: 'Alerts', body: 'Slack, email, Jira issues or your own webhook when signatures start failing or an incident opens, and again when it resolves.', live: true },
+    { icon: SendIcon, title: 'Outbound webhooks', body: "Send your product's webhooks through Relaya: signed, retried and logged, with a portal where your customers manage their endpoints.", live: true },
+    { icon: NetworkIcon, title: 'Connections & API proxy', body: 'Connect Zoho, HubSpot, Google, Jira and Shiprocket with OAuth, then call their APIs through Relaya with tokens refreshed for you.', live: true },
   ]
   return (
     <Section
       id="features"
       eyebrow="Features"
       title="One control plane for every integration you run"
-      intro="Starting with webhooks from any provider. Custom-built integrations and platforms like Nango come next."
+      intro="Webhooks coming in, webhooks going out, and the APIs you call: verified, recorded and watched in one place."
     >
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((f, i) => (
@@ -556,7 +561,7 @@ function Developers() {
 
 function Security() {
   const items: { icon: LucideIcon; title: string; body: string }[] = [
-    { icon: LockIcon, title: 'Envelope encryption', body: 'Signing secrets and tokens are encrypted with a separate data key per organization.' },
+    { icon: LockIcon, title: 'Encrypted secrets', body: 'Signing secrets and tokens are encrypted at rest, with a separate key for each organization.' },
     { icon: EyeOffIcon, title: 'Masked by default', body: 'Card numbers, tokens and passwords are masked in the explorer. Credential headers are never stored.' },
     { icon: KeyRoundIcon, title: 'Roles & API keys', body: 'Owner, admin and member roles. Scoped API keys that are shown once and can be revoked instantly.' },
     { icon: ScrollTextIcon, title: 'Audit log', body: 'Every change records who did it, to what, and the result, written in the same transaction as the change.' },
@@ -585,16 +590,17 @@ function Security() {
 
 function Pricing() {
   const plans = [
-    { name: 'Team', price: '₹14,999', per: '/ month', blurb: 'For teams with integrations in production.', items: ['500 connections', '1M events / month', '30-day history', 'Contracts, incidents & replay', 'Roles, API keys, audit log'], cta: 'Start free trial', highlight: true },
-    { name: 'Business', price: '₹49,999', per: '/ month', blurb: 'For integrations that move money or customer data.', items: ['5,000 connections', '10M events / month', 'Impact analysis', 'Dry-run & verify', 'Audit export'], cta: 'Start with a trial', highlight: false },
-    { name: 'Enterprise', price: '₹2 lakh+', per: '/ month', blurb: 'For large teams with security and compliance needs.', items: ['Custom connection & event limits', 'SSO and SCIM', 'Self-hosted option', 'Uptime SLA', '1 custom connector every quarter'], cta: 'Start with a trial', highlight: false },
+    { name: 'Team', blurb: 'For teams with integrations in production.', items: ['500 connections', '1M events / month', '30-day history', 'Contracts, incidents & replay', 'Roles, API keys, audit log'], highlight: true },
+    { name: 'Business', blurb: 'For integrations that move money or customer data.', items: ['5,000 connections', '10M events / month', 'Repair rules with dry-run', 'Outbound webhooks & customer portal', 'Audit log API'], highlight: false },
+    { name: 'Enterprise', blurb: 'For large teams with security and compliance needs.', items: ['Custom connection & event limits', 'SSO and SCIM', 'Self-hosted option', 'Uptime SLA', '1 custom connector every quarter'], highlight: false },
   ]
+  const mailto = (plan: string) => `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Relaya ${plan} plan`)}`
   return (
     <Section
       id="pricing"
       eyebrow="Pricing"
       title="Simple plans that grow with your integrations"
-      intro={`Try the Team plan free for ${TRIAL_DAYS} days. Design partners get 50% off any plan for 12 months in exchange for feedback.`}
+      intro={`Try the Team plan free for ${TRIAL_DAYS} days. For pricing, contact us at ${CONTACT_EMAIL}. Design partners get 50% off any plan for 12 months.`}
     >
       <div className="grid items-stretch gap-4 lg:grid-cols-3">
         {plans.map((p, i) => (
@@ -605,9 +611,13 @@ function Pricing() {
                   <h3 className="font-semibold text-l-text">{p.name}</h3>
                   {p.highlight && <span className="rounded-full bg-[#14b886] px-2 py-0.5 text-[11px] font-semibold text-[#0b1520]">Most popular</span>}
                 </div>
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-4xl font-semibold tracking-tight text-l-text">{p.price}</span>
-                  <span className="text-sm text-l-subtle">{p.per}</span>
+                <div className="mt-4">
+                  <a href={mailto(p.name)} className="text-3xl font-semibold tracking-tight text-l-text transition hover:text-l-accent">
+                    Contact us
+                  </a>
+                  <a href={mailto(p.name)} className="mt-1 block break-all text-sm text-l-subtle transition hover:text-l-accent">
+                    {CONTACT_EMAIL}
+                  </a>
                 </div>
                 <p className="mt-2 text-sm">{p.blurb}</p>
                 <ul className="my-6 space-y-2.5 text-sm">
@@ -621,10 +631,10 @@ function Pricing() {
                 <div className="mt-auto grid">
                   {p.highlight ? (
                     <PrimaryCta>
-                      {p.cta} <Arrow />
+                      Start free trial <Arrow />
                     </PrimaryCta>
                   ) : (
-                    <SecondaryCta to="/signup">{p.cta}</SecondaryCta>
+                    <SecondaryCta href={mailto(p.name)}>Contact us</SecondaryCta>
                   )}
                 </div>
               </div>
@@ -635,8 +645,11 @@ function Pricing() {
       <Reveal>
         <p className="mx-auto mt-8 max-w-3xl text-center text-sm text-l-subtle">
           {TRIAL_DAYS}-day free trial of the Team plan, card required. You're charged when the trial ends; cancel before
-          then and you pay nothing. Plans include features as they launch; items marked Coming soon are on the way.
-          Custom connectors from ₹50k one-time.
+          then and you pay nothing. Plans include new features as they launch. For pricing and custom connectors, email{' '}
+          <a href={`mailto:${CONTACT_EMAIL}`} className="text-l-accent underline-offset-4 hover:underline">
+            {CONTACT_EMAIL}
+          </a>
+          .
         </p>
       </Reveal>
     </Section>

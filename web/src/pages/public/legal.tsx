@@ -290,8 +290,8 @@ export function PrivacyPage() {
             title: 'How we protect it',
             body: (
               <p>
-                Traffic is encrypted with HTTPS; secrets are encrypted with AES-256-GCM using a separate key per organisation; passwords are hashed with
-                bcrypt, and API keys and sessions are stored only as hashes. Access is limited by role and recorded in the audit log. Details are on the{' '}
+                Traffic is encrypted with HTTPS; secrets are encrypted at rest with a separate key per organisation; passwords, API keys and sessions are
+                stored only as hashes. Access is limited by role and recorded in the audit log. Details are on the{' '}
                 <A to="/security">Security</A> page. If a breach affects your personal data, we will inform you and the Data Protection Board of India as the
                 law requires.
               </p>

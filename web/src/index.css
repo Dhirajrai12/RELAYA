@@ -289,7 +289,7 @@ body {
     }
 }
 .l-marquee {
-    animation: l-marquee 28s linear infinite;
+    animation: l-marquee 34s linear infinite;
 }
 .l-marquee:hover {
     animation-play-state: paused;

@@ -100,14 +100,18 @@ export function TypedCode({
     )
   })
 
+  // Code and output scroll sideways together inside the window, so a long line never
+  // widens the window (which pushed it past the screen on phones and made the hero jump).
   return (
-    <div className="font-mono text-[12.5px] leading-[1.6] sm:text-[13px]">
-      <div className="overflow-x-auto">{rendered}</div>
-      {done && output && (
-        <div className="mt-3 border-t border-white/10 pt-3 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1">
-          {output}
-        </div>
-      )}
+    <div className="min-w-0 overflow-x-auto font-mono text-[12.5px] leading-[1.6] sm:text-[13px]">
+      <div className="w-max min-w-full">
+        {rendered}
+        {done && output && (
+          <div className="mt-3 border-t border-white/10 pt-3 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1">
+            {output}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -219,7 +223,7 @@ export function CodeDemo() {
       </div>
 
       {/* body: fixed height so tabs don't make the page jump */}
-      <div className="h-[340px] p-4 sm:h-[330px] sm:p-5" role="tabpanel">
+      <div className="h-[340px] min-w-0 overflow-hidden p-4 sm:h-[330px] sm:p-5" role="tabpanel">
         {typed ? (
           <TypedCode
             key={active}

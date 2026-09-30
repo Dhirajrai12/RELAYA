@@ -17,15 +17,17 @@ import { Link } from 'react-router-dom'
 import { C, PublicPage } from './layout'
 
 // Every statement here must be true of the product today. Plans are labelled as plans.
+// Say what is protected, not how: no algorithms, schedules, limits or infrastructure
+// details that would help an attacker plan around them.
 
 const areas: { icon: LucideIcon; title: string; points: ReactNode[] }[] = [
   {
     icon: LockIcon,
     title: 'Encryption',
     points: [
-      'All traffic uses HTTPS; browsers are told to never use plain HTTP (HSTS).',
-      'Secrets you give us (provider signing secrets, destination secrets, Slack URLs) are encrypted with AES-256-GCM, using a separate data key per organization that is itself encrypted with a master key kept outside the database.',
-      'Passwords are hashed with bcrypt. API keys and session tokens are stored only as SHA-256 hashes: we cannot read them back.',
+      'All traffic is encrypted in transit with HTTPS, and browsers are told never to use plain HTTP.',
+      'Secrets you give us (provider signing secrets, destination secrets, alert URLs, connection tokens) are encrypted at rest, with a separate key for each organization.',
+      'Passwords, API keys and session tokens are stored only in hashed form: we cannot read them back.',
     ],
   },
   {
@@ -41,42 +43,38 @@ const areas: { icon: LucideIcon; title: string; points: ReactNode[] }[] = [
     icon: WebhookIcon,
     title: 'Webhook security',
     points: [
-      'Provider signatures are verified on arrival (Razorpay, Cashfree, PayU, PhonePe, Stripe, Shopify, GitHub, Standard Webhooks / Svix, or any HMAC); failures are recorded and can alert you.',
+      'Provider signatures are verified on arrival; failures are recorded and can alert you.',
       <>Every request we forward is signed with your destination's own secret, with a timestamp so captured requests can't be replayed later (<Link to="/docs#receive" className="text-l-accent underline-offset-4 hover:underline">how to verify</Link>).</>,
-      'Destinations must be public HTTPS addresses. Private, internal and cloud-metadata addresses are refused, checked again at connection time, and redirects are never followed.',
+      'Destinations must be public HTTPS addresses; private and internal addresses are refused.',
     ],
   },
   {
     icon: UsersIcon,
     title: 'Access control',
     points: [
-      'Owner, admin and member roles, enforced on every API route. An automated test tries every route with every role and fails the build if one is unprotected.',
-      "API keys belong to one organization and carry a role. Another organization's data always answers \"not found\", so it can't even be probed.",
-      'Every change is written to an audit log (who, what, when, from where, and the result) in the same transaction as the change itself.',
+      'Owner, admin and member roles, enforced on every API route.',
+      'API keys belong to one organization and carry a role. Organizations are fully isolated from one another.',
+      'Every change is recorded in an audit log: who made it, what changed, when, and the result.',
     ],
   },
   {
     icon: GaugeIcon,
     title: 'Abuse protection',
     points: [
-      'Sign-in is rate-limited per address and per account (failed attempts only, so an attacker cannot lock you out by guessing).',
-      'Sign-up, the API and each webhook URL have rate limits; over-limit requests get 429 with Retry-After, which providers honour.',
-      'A strict Content-Security-Policy and anti-framing headers protect the dashboard against script injection and clickjacking.',
+      'Sign-in, sign-up, the API and webhook URLs are rate-limited, and sign-in is protected against password guessing.',
+      'The dashboard is protected against script injection and clickjacking.',
     ],
   },
   {
     icon: DatabaseBackupIcon,
     title: 'Backups and recovery',
-    points: [
-      'The database is backed up every night, with checksums; the last 14 are kept.',
-      'Restore drills restore a real backup, compare it table by table and time it, against a target of under an hour.',
-    ],
+    points: ['Your data is backed up automatically, and we regularly test restoring it.'],
   },
   {
     icon: ActivityIcon,
     title: 'Monitoring',
     points: [
-      <>Delivery, contract checks, alerts, the API and the server are monitored continuously, with alerts on stuck work, errors, low disk and missing backups. Public health: <Link to="/status" className="text-l-accent underline-offset-4 hover:underline">system status</Link>.</>,
+      <>The platform is monitored around the clock, and problems alert our team. Public health: <Link to="/status" className="text-l-accent underline-offset-4 hover:underline">system status</Link>.</>,
     ],
   },
   {
@@ -94,7 +92,7 @@ export function SecurityPage() {
     <PublicPage
       eyebrow="Security"
       title="How Relaya protects your data"
-      intro="Relaya sits in the path of your integrations, so it has to be the most careful part of it. This is what we do today."
+      intro="Relaya sits in the path of your integrations, so it has to be the most careful part of it."
     >
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         {areas.map((a) => (
@@ -120,11 +118,14 @@ export function SecurityPage() {
       <section className="mt-5 rounded-2xl border border-l-border bg-l-soft p-6">
         <div className="mb-3 flex items-center gap-3">
           <KeyRoundIcon className="size-5 text-l-accent" />
-          <h2 className="text-lg font-semibold text-l-text">Certifications</h2>
+          <h2 className="text-lg font-semibold text-l-text">Security reviews</h2>
         </div>
         <p className="text-sm leading-relaxed">
-          Relaya is not certified yet. An independent penetration test comes before general availability, and SOC 2 and ISO 27001 are planned
-          for our second year. If your security review needs more detail, ask us: we'll answer your questionnaire.
+          SOC 2 and ISO 27001 certification are on our roadmap. If your security review needs more detail, email{' '}
+          <a href="mailto:info@relaya.sbs" className="text-l-accent underline-offset-4 hover:underline">
+            info@relaya.sbs
+          </a>{' '}
+          and we'll answer your questionnaire. To report a vulnerability, write to the same address.
         </p>
       </section>
     </PublicPage>

@@ -23,19 +23,19 @@ export function IncidentCard({ bare = false }: { bare?: boolean }) {
       icon: UsersIcon,
       tone: 'text-[#f5b94a]',
       title: 'Who is affected?',
-      body: '12 customers not activated · ₹3.2 lakh in payments waiting',
+      body: '12 events since 09:41 · 1 destination (CRM)',
     },
     {
       icon: RotateCcwIcon,
       tone: 'text-[#7fb4ff]',
       title: 'Is it safe to fix?',
-      body: 'Dry-run passed · idempotency keys on all 12 events',
+      body: 'Replay preview: 12 deliveries · same Idempotency-Key',
     },
     {
       icon: CheckCircle2Icon,
       tone: 'text-[#3ee0a8]',
       title: 'Did the fix work?',
-      body: 'Verified in CRM: 12/12 accounts active',
+      body: 'Replayed 12/12 · CRM answered 200 OK',
     },
   ]
 

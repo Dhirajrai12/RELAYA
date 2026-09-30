@@ -26,7 +26,9 @@ export function Reveal({ children, delay = 0, className }: { children: ReactNode
     return () => io.disconnect()
   }, [])
   return (
-    <div ref={ref} className={cn('reveal', className)} style={{ '--reveal-delay': `${delay}ms` } as CSSProperties}>
+    // min-w-0: as a grid item it must be able to shrink, or wide content (code that doesn't
+    // wrap) widens its column and pushes the card past the screen on phones.
+    <div ref={ref} className={cn('reveal min-w-0', className)} style={{ '--reveal-delay': `${delay}ms` } as CSSProperties}>
       {children}
     </div>
   )
