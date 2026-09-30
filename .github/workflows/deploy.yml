@@ -122,4 +122,16 @@ jobs:
             --target "$GITHUB_SHA" --prerelease \
             --title "Production build $short" \
             --notes "Tested build of $GITHUB_SHA for the Windows/IIS server. The server's auto-deploy task installs it within a few minutes. Built by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+          # gh uploads the files to a draft and then publishes it. That last step once
+          # left the release a draft while the job still passed, and the server (which
+          # reads it anonymously) saw nothing. Publish it if needed, and fail if it isn't public.
+          if [ "$(gh release view production --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit production --draft=false
+          fi
+          test "$(gh release view production --json isDraft --jq .isDraft)" = "false"
+          for i in 1 2 3 4 5 6; do
+            curl -sf -o /dev/null "https://api.github.com/repos/$GH_REPO/releases/tags/production" && break
+            [ "$i" = 6 ] && { echo "::error::The production release isn't publicly visible"; exit 1; }
+            sleep 5
+          done
           echo "Published production build $short" >> "$GITHUB_STEP_SUMMARY"
